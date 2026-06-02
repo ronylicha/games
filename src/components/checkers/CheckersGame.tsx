@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image } from 'expo-image';
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -28,6 +29,16 @@ const playerLabels: Record<Player, string> = {
   red: 'Rouge',
 };
 
+type SavedCheckersGame = {
+  state: GameState;
+  mode: GameMode;
+  playerColor: Player;
+  lastMove: Move | null;
+  lastMovePlayer: Player | null;
+};
+
+const checkersStorageKey = 'games:checkers:state';
+
 export function CheckersGame({ compact = false }: CheckersGameProps) {
   const [state, setState] = useState<GameState>(() => createInitialState());
   const [mode, setMode] = useState<GameMode>('computer');
@@ -35,6 +46,7 @@ export function CheckersGame({ compact = false }: CheckersGameProps) {
   const [selected, setSelected] = useState<Square | null>(null);
   const [lastMove, setLastMove] = useState<Move | null>(null);
   const [lastMovePlayer, setLastMovePlayer] = useState<Player | null>(null);
+  const [hydrated, setHydrated] = useState(false);
 
   const allMoves = useMemo(() => getLegalMoves(state.board, state.turn), [state.board, state.turn]);
   const selectedMoves = useMemo(
@@ -43,6 +55,57 @@ export function CheckersGame({ compact = false }: CheckersGameProps) {
   );
   const aiPlayer: Player = playerColor === 'ivory' ? 'red' : 'ivory';
   const isComputerTurn = mode === 'computer' && state.turn === aiPlayer && state.status === 'playing';
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadSavedGame() {
+      const stored = await AsyncStorage.getItem(checkersStorageKey);
+      if (!stored) {
+        return;
+      }
+
+      const saved = JSON.parse(stored) as SavedCheckersGame;
+      if (!mounted) {
+        return;
+      }
+
+      setState(saved.state ?? createInitialState());
+      setMode(saved.mode === 'human' ? 'human' : 'computer');
+      setPlayerColor(saved.playerColor === 'red' ? 'red' : 'ivory');
+      setLastMove(saved.lastMove ?? null);
+      setLastMovePlayer(saved.lastMovePlayer === 'red' ? 'red' : saved.lastMovePlayer === 'ivory' ? 'ivory' : null);
+      setSelected(null);
+    }
+
+    loadSavedGame()
+      .catch(() => undefined)
+      .finally(() => {
+        if (mounted) {
+          setHydrated(true);
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) {
+      return;
+    }
+
+    const payload: SavedCheckersGame = {
+      state,
+      mode,
+      playerColor,
+      lastMove,
+      lastMovePlayer,
+    };
+
+    AsyncStorage.setItem(checkersStorageKey, JSON.stringify(payload)).catch(() => undefined);
+  }, [hydrated, lastMove, lastMovePlayer, mode, playerColor, state]);
 
   useEffect(() => {
     if (!isComputerTurn) {
@@ -63,6 +126,7 @@ export function CheckersGame({ compact = false }: CheckersGameProps) {
   }, [aiPlayer, isComputerTurn, state]);
 
   function reset(nextMode = mode, nextColor = playerColor) {
+    AsyncStorage.removeItem(checkersStorageKey).catch(() => undefined);
     setMode(nextMode);
     setPlayerColor(nextColor);
     setState(createInitialState());

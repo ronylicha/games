@@ -1,10 +1,22 @@
 import { Chess, type Move, type Piece, type Square } from 'chess.js';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image } from 'expo-image';
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 type ChessMode = 'human' | 'computer';
 type ChessLevel = 'facile' | 'normal' | 'difficile';
+
+type SavedChessGame = {
+  fen: string;
+  mode: ChessMode;
+  level: ChessLevel;
+  playerColor: Piece['color'];
+  lastMove: Move | null;
+  lastMoveColor: Piece['color'] | null;
+};
+
+const chessStorageKey = 'games:chess:state';
 
 const levelDepth: Record<ChessLevel, number> = {
   facile: 1,
@@ -29,6 +41,7 @@ export function ChessGame() {
   const [selected, setSelected] = useState<Square | null>(null);
   const [lastMove, setLastMove] = useState<Move | null>(null);
   const [lastMoveColor, setLastMoveColor] = useState<'w' | 'b' | null>(null);
+  const [hydrated, setHydrated] = useState(false);
 
   const chess = useMemo(() => new Chess(fen), [fen]);
   const board = chess.board();
@@ -43,6 +56,60 @@ export function ChessGame() {
     }
     return chess.moves({ verbose: true, square: selected });
   }, [chess, selected]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadSavedGame() {
+      const stored = await AsyncStorage.getItem(chessStorageKey);
+      if (!stored) {
+        return;
+      }
+
+      const saved = JSON.parse(stored) as SavedChessGame;
+      new Chess(saved.fen);
+      if (!mounted) {
+        return;
+      }
+
+      setFen(saved.fen);
+      setMode(saved.mode === 'human' ? 'human' : 'computer');
+      setLevel(['facile', 'normal', 'difficile'].includes(saved.level) ? saved.level : 'normal');
+      setPlayerColor(saved.playerColor === 'b' ? 'b' : 'w');
+      setLastMove(saved.lastMove ?? null);
+      setLastMoveColor(saved.lastMoveColor === 'b' ? 'b' : saved.lastMoveColor === 'w' ? 'w' : null);
+      setSelected(null);
+    }
+
+    loadSavedGame()
+      .catch(() => undefined)
+      .finally(() => {
+        if (mounted) {
+          setHydrated(true);
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) {
+      return;
+    }
+
+    const payload: SavedChessGame = {
+      fen,
+      mode,
+      level,
+      playerColor,
+      lastMove,
+      lastMoveColor,
+    };
+
+    AsyncStorage.setItem(chessStorageKey, JSON.stringify(payload)).catch(() => undefined);
+  }, [fen, hydrated, lastMove, lastMoveColor, level, mode, playerColor]);
 
   useEffect(() => {
     if (!aiThinking) {
@@ -65,6 +132,7 @@ export function ChessGame() {
   }, [aiColor, aiThinking, fen, level]);
 
   function reset(nextMode = mode, nextColor = playerColor) {
+    AsyncStorage.removeItem(chessStorageKey).catch(() => undefined);
     const next = new Chess();
     setFen(next.fen());
     setMode(nextMode);

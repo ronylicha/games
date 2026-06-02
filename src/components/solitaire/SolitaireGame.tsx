@@ -1,10 +1,12 @@
-import { useMemo, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import {
   DrawMode,
   SolitaireCard,
   SolitaireSource,
+  SolitaireState,
   SolitaireSuit,
   canRecycleStock,
   canSelectTableauCards,
@@ -19,11 +21,13 @@ import {
 } from '@/game/solitaire';
 
 const foundationSuits: SolitaireSuit[] = ['clubs', 'diamonds', 'hearts', 'spades'];
+const solitaireStorageKey = 'games:solitaire:state';
 
 export function SolitaireGame() {
   const { width } = useWindowDimensions();
   const [state, setState] = useState(() => createSolitaireState('infinite'));
   const [selected, setSelected] = useState<SolitaireSource | null>(null);
+  const [hydrated, setHydrated] = useState(false);
 
   const contentWidth = Math.max(280, Math.min(width - 48, 760));
   const tableauGap = width < 420 ? 3 : 5;
@@ -38,6 +42,45 @@ export function SolitaireGame() {
   const visibleWaste = state.waste[state.waste.length - 1];
   const stockLocked = state.stock.length === 0 && state.waste.length > 0 && !canRecycleStock(state);
 
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadSavedGame() {
+      const stored = await AsyncStorage.getItem(solitaireStorageKey);
+      if (!stored) {
+        return;
+      }
+
+      const saved = JSON.parse(stored) as SolitaireState;
+      if (!mounted) {
+        return;
+      }
+
+      setState(saved ?? createSolitaireState('infinite'));
+      setSelected(null);
+    }
+
+    loadSavedGame()
+      .catch(() => undefined)
+      .finally(() => {
+        if (mounted) {
+          setHydrated(true);
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) {
+      return;
+    }
+
+    AsyncStorage.setItem(solitaireStorageKey, JSON.stringify(state)).catch(() => undefined);
+  }, [hydrated, state]);
+
   const status = useMemo(() => {
     if (state.status === 'won') {
       return 'Partie gagnée';
@@ -49,6 +92,7 @@ export function SolitaireGame() {
   }, [state, stockLocked]);
 
   function reset(drawMode = state.drawMode) {
+    AsyncStorage.removeItem(solitaireStorageKey).catch(() => undefined);
     setState(createSolitaireState(drawMode));
     setSelected(null);
   }

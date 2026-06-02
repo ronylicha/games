@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
@@ -16,6 +17,13 @@ import {
   startBackgammonTurn,
 } from '@/game/backgammon';
 
+type SavedBackgammonGame = {
+  state: ReturnType<typeof createBackgammonState>;
+  mode: BackgammonMode;
+};
+
+const backgammonStorageKey = 'games:backgammon:state';
+
 const topLeftPoints = Array.from({ length: 6 }, (_, index) => 12 + index);
 const topRightPoints = Array.from({ length: 6 }, (_, index) => 18 + index);
 const bottomLeftPoints = Array.from({ length: 6 }, (_, index) => 11 - index);
@@ -27,6 +35,7 @@ export function BackgammonGame() {
   const [state, setState] = useState(() => createBackgammonState());
   const [mode, setMode] = useState<BackgammonMode>('computer');
   const [selected, setSelected] = useState<MoveFrom | null>(null);
+  const [hydrated, setHydrated] = useState(false);
 
   const legalMoves = useMemo(() => getBackgammonLegalMoves(state), [state]);
   const selectedMoves = useMemo(
@@ -56,6 +65,47 @@ export function BackgammonGame() {
   }, [boardHeight, boardWidth]);
 
   useEffect(() => {
+    let mounted = true;
+
+    async function loadSavedGame() {
+      const stored = await AsyncStorage.getItem(backgammonStorageKey);
+      if (!stored) {
+        return;
+      }
+
+      const saved = JSON.parse(stored) as SavedBackgammonGame;
+      if (!mounted) {
+        return;
+      }
+
+      setState(saved.state ?? createBackgammonState());
+      setMode(saved.mode === 'human' ? 'human' : 'computer');
+      setSelected(null);
+    }
+
+    loadSavedGame()
+      .catch(() => undefined)
+      .finally(() => {
+        if (mounted) {
+          setHydrated(true);
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) {
+      return;
+    }
+
+    const payload: SavedBackgammonGame = { state, mode };
+    AsyncStorage.setItem(backgammonStorageKey, JSON.stringify(payload)).catch(() => undefined);
+  }, [hydrated, mode, state]);
+
+  useEffect(() => {
     if (!aiThinking) {
       return;
     }
@@ -75,6 +125,7 @@ export function BackgammonGame() {
   }, [aiThinking, state]);
 
   function reset(nextMode = mode) {
+    AsyncStorage.removeItem(backgammonStorageKey).catch(() => undefined);
     setMode(nextMode);
     setState(createBackgammonState());
     setSelected(null);
