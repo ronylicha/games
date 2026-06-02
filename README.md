@@ -1,56 +1,169 @@
-# Welcome to your Expo app 👋
+# Games
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Application mobile Expo / React Native regroupant plusieurs jeux classiques, jouables en local contre l'IA ou en solo selon le jeu.
 
-## Get started
+## Jeux inclus
 
-1. Install dependencies
+- **Dames** : choix de la couleur du joueur, mode 1 vs 1 ou 1 vs IA, moteur de coups, captures, dames, dernier mouvement IA marqué visuellement.
+- **Echecs** : choix de la couleur, niveaux d'IA, moteur base sur `chess.js`, pieces PNG dediees, dernier mouvement IA marque.
+- **Backgammon** : plateau mobile optimise, pions, prison au centre, zones de sortie, lancers de des et moteur de jeu.
+- **Dominos** : mode 1 vs IA, tuiles classiques en PNG, chaine en serpent lisible sur mobile, IA et pioche.
+- **Solitaire** : Klondike avec pioche infinie ou limitee a 3 passages.
+- **Dino Run** : runner inspire du jeu hors ligne de Chrome, cactus, oiseaux, nuages, score, alternance jour/nuit tous les 250 points et leaderboard persistant.
 
-   ```bash
-   npm install
-   ```
+L'accueil affiche une liste de jeux avec une vignette graphique et un bouton `?` qui ouvre les regles de chaque jeu.
 
-2. Start the app
+## Stack
 
-   ```bash
-   npx expo start
-   ```
+- Expo SDK 56
+- React Native 0.85
+- React 19
+- Expo Router
+- TypeScript
+- `expo-image` pour les assets PNG
+- `chess.js` pour le moteur d'echecs
+- `@react-native-async-storage/async-storage` pour le leaderboard Dino
+- EAS Build pour la creation d'APK preview
 
-In the output, you'll find options to open the app in a
+## Configuration app
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+- Nom affiche : `Games`
+- Android package : `com.ronylicha.games`
+- EAS project : `b675206c-2314-4bdd-b87c-904befe75f62`
+- Scheme : `games`
+- Orientation : portrait
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+## Installation
 
 ```bash
-npm run reset-project
+npm install
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## Lancement local
 
-### Other setup steps
+```bash
+npm run start
+```
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+Puis ouvrir dans Expo Go, un emulateur Android, un simulateur iOS ou le web.
 
-## Learn more
+Commandes utiles :
 
-To learn more about developing your project with Expo, look at the following resources:
+```bash
+npm run android
+npm run ios
+npm run web
+```
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+## Verification
 
-## Join the community
+```bash
+npx tsc --noEmit
+npm run lint
+npx expo export --platform web --output-dir dist-web-check
+rm -rf dist-web-check
+```
 
-Join our community of developers creating universal apps.
+## Build APK preview avec EAS
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+Le profil `preview` dans [eas.json](./eas.json) genere un APK Android installable :
+
+```bash
+eas build --platform android --profile preview
+```
+
+En mode non interactif :
+
+```bash
+eas build --platform android --profile preview --non-interactive
+```
+
+## Structure principale
+
+```text
+src/app/
+  index.tsx        Accueil et liste des jeux
+  checkers.tsx     Route Dames
+  chess.tsx        Route Echecs
+  backgammon.tsx   Route Backgammon
+  dominos.tsx      Route Dominos
+  solitaire.tsx    Route Solitaire
+  dino.tsx         Route Dino Run
+
+src/components/
+  checkers/        UI Dames
+  chess/           UI Echecs
+  backgammon/      UI Backgammon
+  dominoes/        UI Dominos
+  solitaire/       UI Solitaire
+  dino/            UI et boucle de jeu Dino Run
+  game-shell/      Layout commun des ecrans de jeu
+
+src/game/
+  checkers/        Moteur et IA Dames
+  backgammon/      Moteur Backgammon
+  dominoes/        Moteur Dominos
+  solitaire/       Moteur Solitaire
+
+assets/game/
+  checkers/        Pions et textures Dames
+  chess/           Pieces Echecs PNG
+  dominoes/        Tuiles Dominos PNG
+  dino/            Sprites Dino Run PNG
+```
+
+## Assets
+
+Les assets de jeu sont des PNG transparents generes localement et stockes dans `assets/game`.
+
+Le logo et les icones de l'application sont dans `assets/images` :
+
+- `icon.png`
+- `app-logo.png`
+- `splash-icon.png`
+- `favicon.png`
+- `android-icon-foreground.png`
+- `android-icon-background.png`
+- `android-icon-monochrome.png`
+
+## Notes de gameplay
+
+### Dino Run
+
+- Appui sur le plateau ou sur `Sauter` pour sauter.
+- `Baisser` maintenu pour passer sous certains oiseaux.
+- Les obstacles et sprites sont volontairement petits pour conserver une grande surface de jeu.
+- Le mode nuit alterne tous les 250 points.
+- Si le score entre dans le top 5, une modale custom demande le nom du joueur.
+- Le leaderboard est persistant via AsyncStorage.
+
+### Dominos
+
+- Le mode 1 vs 1 est retire : seul le mode 1 vs IA est conserve.
+- La chaine est rendue en lignes de 5 tuiles sur mobile pour rester lisible.
+- Les lignes alternent gauche/droite avec des connecteurs verticaux.
+
+### Backgammon
+
+- Le plateau est optimise pour l'ecran mobile.
+- Les pions captures sont empiles au centre pour eviter de cacher les fleches.
+- Les marges et espacements ont ete ajustes pour conserver un plateau jouable.
+
+## Git
+
+Remote principal :
+
+```bash
+git@github.com:ronylicha/games.git
+```
+
+Branche principale :
+
+```bash
+main
+```
+
+## Remarques
+
+- Le dossier `screenshots/` est ignore par Git et sert uniquement aux captures de verification locales.
+- Les dossiers natifs `ios/` et `android/` ne sont pas versionnes ; ils sont generes par Expo/EAS si necessaire.
