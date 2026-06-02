@@ -126,6 +126,17 @@ Le logo et les icones de l'application sont dans `assets/images` :
 - `android-icon-background.png`
 - `android-icon-monochrome.png`
 
+## Licence et contributions
+
+Ce depot utilise un modele de licence separe par type de contenu :
+
+- **Code, documentation, scripts, configuration et tests** : GPL-3.0-only. Voir [LICENSE](./LICENSE).
+- **Assets originaux du jeu et branding** : proprietaires. Voir [ASSETS-LICENSE.md](./ASSETS-LICENSE.md).
+- **Nom, logo, identite visuelle et package Android `com.ronylicha.games`** : reserves a l'application officielle. Voir [TRADEMARKS.md](./TRADEMARKS.md).
+- **Contributions** : soumises a un CLA. Voir [CLA.md](./CLA.md) et [CONTRIBUTING.md](./CONTRIBUTING.md).
+
+Les forks du code sont autorises sous GPLv3, mais les versions publiques modifiees doivent remplacer les assets proprietaires et le branding officiel.
+
 ## Notes de gameplay
 
 ### Dino Run
