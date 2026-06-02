@@ -1,6 +1,7 @@
 {
   "expo": {
     "name": "Games",
+    "description": "Collection de jeux classiques jouables sur mobile et sur le web: dames, échecs, backgammon, dominos, solitaire et Dino Run.",
     "slug": "games",
     "owner": "ronylicha",
     "version": "1.0.0",
