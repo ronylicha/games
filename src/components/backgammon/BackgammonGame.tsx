@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import {
   BackgammonMode,
@@ -44,12 +44,17 @@ export function BackgammonGame() {
   );
   const aiThinking = mode === 'computer' && state.turn === 'red' && state.status === 'playing';
   const aiLastMove = mode === 'computer' && state.lastMovePlayer === 'red' ? state.lastMove : null;
+  const isDesktopWeb = Platform.OS === 'web' && width >= 900;
   const availableWidth = Math.max(320, width - 20);
-  const availableHeight = Math.max(360, height - 230);
+  const availableHeight = Math.max(360, height - (isDesktopWeb ? 170 : 230));
   const rotatedFrameWidth = Math.min(availableWidth, availableHeight / 1.78);
   const rotatedFrameHeight = rotatedFrameWidth * 1.78;
-  const boardWidth = rotatedFrameHeight;
-  const boardHeight = rotatedFrameWidth;
+  const desktopBoardWidth = Math.min(availableWidth, availableHeight * 1.78, 1120);
+  const desktopBoardHeight = desktopBoardWidth / 1.78;
+  const boardWidth = isDesktopWeb ? desktopBoardWidth : rotatedFrameHeight;
+  const boardHeight = isDesktopWeb ? desktopBoardHeight : rotatedFrameWidth;
+  const boardFrameWidth = isDesktopWeb ? boardWidth : rotatedFrameWidth;
+  const boardFrameHeight = isDesktopWeb ? boardHeight : rotatedFrameHeight;
   const pointMetrics = useMemo(() => {
     const usableWidth = boardWidth - 64 - 16;
     const pointWidth = usableWidth / 12;
@@ -184,7 +189,7 @@ export function BackgammonGame() {
 
   return (
     <View style={styles.container}>
-      <View style={[styles.controls, { width: Math.min(availableWidth, 720) }]}>
+      <View style={[styles.controls, { width: Math.min(availableWidth, isDesktopWeb ? boardWidth : 720) }]}>
         <View style={styles.statusRow}>
           <Text style={styles.statusText}>{statusText(state.turn, state.status, aiThinking)}</Text>
           <View style={styles.diceRow}>
@@ -213,14 +218,14 @@ export function BackgammonGame() {
         </View>
       </View>
 
-      <View style={[styles.rotatedBoardFrame, { width: rotatedFrameWidth, height: rotatedFrameHeight }]}>
+      <View style={[styles.rotatedBoardFrame, { width: boardFrameWidth, height: boardFrameHeight }]}>
         <View
           style={[
             styles.board,
             {
               width: boardWidth,
               height: boardHeight,
-              transform: [{ rotate: '90deg' }],
+              transform: isDesktopWeb ? undefined : [{ rotate: '90deg' }],
             },
           ]}>
           <View style={styles.bearOffRail}>

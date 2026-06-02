@@ -81,6 +81,7 @@ export function DinoGame() {
   const { width } = useWindowDimensions();
   const boardWidth = Math.max(300, Math.min(width - 32, 760));
   const boardHeight = Math.max(230, Math.min(310, boardWidth * 0.58));
+  const isDesktopWeb = Platform.OS === 'web' && width >= 900;
   const groundY = boardHeight - 46;
   const [leaderboard, setLeaderboard] = useState<LeaderScore[]>(sessionLeaderboard);
   const [pendingScore, setPendingScore] = useState<PendingScore | null>(null);
@@ -88,6 +89,9 @@ export function DinoGame() {
   const [snapshot, setSnapshot] = useState<Snapshot>(() => createSnapshot(boardWidth, boardHeight));
   const modelRef = useRef<DinoModel>(createModel(boardWidth, boardHeight));
   const rafRef = useRef<number | null>(null);
+  const boardSizeRef = useRef({ boardWidth, boardHeight });
+  const bestRef = useRef(snapshot.best);
+  const pendingScoreRef = useRef<PendingScore | null>(pendingScore);
 
   useEffect(() => {
     let mounted = true;
@@ -118,7 +122,16 @@ export function DinoGame() {
   useEffect(() => {
     modelRef.current.boardWidth = boardWidth;
     modelRef.current.boardHeight = boardHeight;
+    boardSizeRef.current = { boardWidth, boardHeight };
   }, [boardWidth, boardHeight]);
+
+  useEffect(() => {
+    bestRef.current = snapshot.best;
+  }, [snapshot.best]);
+
+  useEffect(() => {
+    pendingScoreRef.current = pendingScore;
+  }, [pendingScore]);
 
   useEffect(() => {
     function frame(now: number) {
@@ -144,6 +157,86 @@ export function DinoGame() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!isDesktopWeb || typeof window === 'undefined') {
+      return;
+    }
+
+    function startFromKeyboard() {
+      const current = modelRef.current;
+      const size = boardSizeRef.current;
+      modelRef.current = createModel(size.boardWidth, size.boardHeight, Math.max(current.best, bestRef.current));
+      modelRef.current.status = 'running';
+      modelRef.current.lastTime = performance.now();
+      setSnapshot(toSnapshot(modelRef.current));
+    }
+
+    function jumpFromKeyboard() {
+      if (pendingScoreRef.current) {
+        return;
+      }
+
+      const model = modelRef.current;
+      if (model.status !== 'running') {
+        startFromKeyboard();
+        return;
+      }
+
+      if (model.jumpY <= 0.5) {
+        model.velocity = jumpPower;
+        model.jumpY = 2;
+        model.ducking = false;
+        setSnapshot(toSnapshot(model));
+      }
+    }
+
+    function duckFromKeyboard(ducking: boolean) {
+      if (pendingScoreRef.current) {
+        return;
+      }
+
+      const model = modelRef.current;
+      if (model.status === 'running' && model.jumpY <= 0.5) {
+        model.ducking = ducking;
+        setSnapshot(toSnapshot(model));
+      }
+    }
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') {
+        return;
+      }
+
+      event.preventDefault();
+
+      if (event.key === 'ArrowUp' && !event.repeat) {
+        jumpFromKeyboard();
+      }
+
+      if (event.key === 'ArrowDown') {
+        duckFromKeyboard(true);
+      }
+    }
+
+    function onKeyUp(event: KeyboardEvent) {
+      if (event.key !== 'ArrowDown') {
+        return;
+      }
+
+      event.preventDefault();
+      duckFromKeyboard(false);
+    }
+
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+
+    return () => {
+      duckFromKeyboard(false);
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, [isDesktopWeb]);
 
   const dinoTop = groundY - (snapshot.ducking ? duckHeight : dinoHeight) - snapshot.jumpY;
   const speedLabel = useMemo(() => `${Math.round(snapshot.speed)} u/s`, [snapshot.speed]);
