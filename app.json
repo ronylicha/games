@@ -14,6 +14,7 @@
     },
     "android": {
       "package": "com.ronylicha.games",
+      "versionCode": 100,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
