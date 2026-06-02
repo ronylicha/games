@@ -78,6 +78,20 @@ En mode non interactif :
 eas build --platform android --profile preview --non-interactive
 ```
 
+## Deploiement web GitHub Pages
+
+La version web est exportee avec Expo et peut etre jouee depuis GitHub Pages. Le workflow [deploy-web.yml](./.github/workflows/deploy-web.yml) se lance automatiquement a chaque push sur `main` et peut aussi etre lance manuellement depuis l'onglet Actions.
+
+Dans les reglages GitHub du depot, verifier que **Pages > Build and deployment > Source** est configure sur **GitHub Actions**.
+
+URL attendue pour ce depot :
+
+```text
+https://ronylicha.github.io/games/
+```
+
+Le build Pages utilise `EXPO_BASE_URL=/games` pour que les assets Expo soient servis correctement depuis le sous-chemin GitHub Pages du depot.
+
 ## Structure principale
 
 ```text
