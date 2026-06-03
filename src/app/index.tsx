@@ -58,6 +58,32 @@ const games = [
     ],
   },
   {
+    href: '/tic-tac-toe',
+    title: 'Tic Tac Toe',
+    preview: 'tic-tac-toe',
+    accent: '#F95F62',
+    background: '#FFE8EF',
+    rules: [
+      'Aligne trois marques sur une ligne, colonne ou diagonale.',
+      'Choisis 1 vs 1 pour un duel local ou 1 vs IA pour affronter une IA imbattable.',
+      'Les rounds alternent le joueur qui commence et le score est sauvegardé automatiquement.',
+      'Sur web, les touches 1 à 9 jouent les cases et R relance le match.',
+    ],
+  },
+  {
+    href: '/connect-four',
+    title: 'Puissance 4',
+    preview: 'connect-four',
+    accent: '#65D7FF',
+    background: '#E6F7FF',
+    rules: [
+      'Fais tomber tes jetons dans les colonnes pour former une ligne de quatre.',
+      'Les alignements horizontaux, verticaux et diagonaux gagnent le round.',
+      'Joue en duel local ou contre une IA tactique qui bloque tes menaces directes.',
+      'Sur web, les touches 1 à 7 jouent les colonnes et R relance le match.',
+    ],
+  },
+  {
     href: '/dino',
     title: 'Dino Run',
     preview: 'dino',
@@ -297,6 +323,31 @@ function GamePreview({ type, accent, index }: { type: Game['preview']; accent: s
           <View style={styles.solitaireFoundation} />
           <View style={[styles.solitaireFoundation, { right: 70 }]} />
         </View>
+      </View>
+    );
+  }
+
+  if (type === 'tic-tac-toe') {
+    return (
+      <View style={[styles.preview, { backgroundColor: '#101820' }]}>
+        <Image source={require('@/assets/game/tic-tac-toe/bg-arcade.png')} style={styles.ticBack} contentFit="cover" />
+        <View style={[styles.diagonalBand, { backgroundColor: accent, opacity: 0.68 }]} />
+        <Image source={require('@/assets/game/tic-tac-toe/board.png')} style={styles.ticBoardPreview} contentFit="contain" />
+        <Image source={require('@/assets/game/tic-tac-toe/mark-x.png')} style={[styles.ticMarkPreview, styles.ticMarkLeft]} contentFit="contain" />
+        <Image source={require('@/assets/game/tic-tac-toe/mark-o.png')} style={[styles.ticMarkPreview, styles.ticMarkRight]} contentFit="contain" />
+        <Image source={require('@/assets/game/tic-tac-toe/avatar-ai.png')} style={styles.ticAvatarPreview} contentFit="contain" />
+      </View>
+    );
+  }
+
+  if (type === 'connect-four') {
+    return (
+      <View style={[styles.preview, { backgroundColor: '#09111F' }]}>
+        <Image source={require('@/assets/game/connect-four/bg-arena.png')} style={styles.connectBack} contentFit="cover" />
+        <View style={[styles.diagonalBand, { backgroundColor: accent, opacity: 0.56, transform: [{ rotate: '-18deg' }] }]} />
+        <Image source={require('@/assets/game/connect-four/preview-board.png')} style={styles.connectBoardPreview} contentFit="contain" />
+        <Image source={require('@/assets/game/connect-four/disc-red.png')} style={[styles.connectDiscPreview, styles.connectDiscLeft]} contentFit="contain" />
+        <Image source={require('@/assets/game/connect-four/disc-yellow.png')} style={[styles.connectDiscPreview, styles.connectDiscRight]} contentFit="contain" />
       </View>
     );
   }
@@ -886,6 +937,69 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 2,
     borderColor: '#FFF8E4',
+  },
+  ticBack: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+  },
+  ticBoardPreview: {
+    position: 'absolute',
+    width: 124,
+    height: 124,
+    bottom: 14,
+    transform: [{ rotate: '-4deg' }],
+  },
+  ticMarkPreview: {
+    position: 'absolute',
+    width: 58,
+    height: 58,
+  },
+  ticMarkLeft: {
+    left: 66,
+    top: 22,
+    transform: [{ rotate: '-10deg' }],
+  },
+  ticMarkRight: {
+    right: 72,
+    bottom: 24,
+    transform: [{ rotate: '9deg' }],
+  },
+  ticAvatarPreview: {
+    position: 'absolute',
+    right: 48,
+    top: 20,
+    width: 62,
+    height: 62,
+  },
+  connectBack: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+  },
+  connectBoardPreview: {
+    position: 'absolute',
+    width: 250,
+    height: 164,
+    bottom: -4,
+    transform: [{ rotate: '-3deg' }],
+  },
+  connectDiscPreview: {
+    position: 'absolute',
+    width: 64,
+    height: 64,
+  },
+  connectDiscLeft: {
+    left: 60,
+    top: 18,
+  },
+  connectDiscRight: {
+    right: 58,
+    bottom: 22,
   },
   dinoSun: {
     position: 'absolute',

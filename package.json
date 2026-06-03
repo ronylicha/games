@@ -1,7 +1,7 @@
 {
   "name": "games",
   "description": "Collection Expo React Native de jeux classiques jouables sur mobile et sur le web: dames, échecs, backgammon, dominos, solitaire et Dino Run.",
-  "main": "expo-router/entry",
+  "main": "index",
   "version": "1.2.0",
   "license": "GPL-3.0-only",
   "dependencies": {
@@ -49,6 +49,9 @@
     "start": "expo start",
     "assets:game": "node ./scripts/generate-game-assets.mjs",
     "assets:street-brawl": "node ./scripts/generate-street-brawl-assets.mjs",
+    "assets:tic-tac-toe": "node ./scripts/generate-tic-tac-toe-assets.mjs",
+    "assets:connect-four": "node ./scripts/generate-connect-four-assets.mjs",
+    "postinstall": "setup-skia-web public",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",
     "ios": "expo start --ios",

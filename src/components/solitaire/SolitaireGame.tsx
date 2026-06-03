@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import {
@@ -28,6 +28,7 @@ export function SolitaireGame() {
   const [state, setState] = useState(() => createSolitaireState('infinite'));
   const [selected, setSelected] = useState<SolitaireSource | null>(null);
   const [hydrated, setHydrated] = useState(false);
+  const lastCardPress = useRef<{ key: string; time: number } | null>(null);
 
   const contentWidth = Math.max(280, Math.min(width - 48, 760));
   const tableauGap = width < 420 ? 3 : 5;
@@ -41,6 +42,8 @@ export function SolitaireGame() {
   const tableauHeight = Math.max(430, cardHeight + cardHeight * 0.27 * 6 + 36);
   const visibleWaste = state.waste[state.waste.length - 1];
   const stockLocked = state.stock.length === 0 && state.waste.length > 0 && !canRecycleStock(state);
+  const allTableauFaceUp = state.tableau.every((column) => column.every((card) => card.faceUp));
+  const canAutoFinish = state.status === 'playing' && allTableauFaceUp && state.stock.length === 0;
 
   useEffect(() => {
     let mounted = true;
@@ -113,6 +116,34 @@ export function SolitaireGame() {
     }
   }
 
+  function moveSourceToFoundation(source: SolitaireSource) {
+    setState((current) => {
+      for (const suit of foundationSuits) {
+        const next = moveSolitaireToFoundation(current, source, suit);
+        if (next !== current) {
+          return next;
+        }
+      }
+
+      return current;
+    });
+    setSelected(null);
+  }
+
+  function pressCard(sourceKey: string, source: SolitaireSource, fallback: () => void) {
+    const now = Date.now();
+    const previous = lastCardPress.current;
+
+    if (previous?.key === sourceKey && now - previous.time < 340) {
+      lastCardPress.current = null;
+      moveSourceToFoundation(source);
+      return;
+    }
+
+    lastCardPress.current = { key: sourceKey, time: now };
+    fallback();
+  }
+
   function pressFoundation(suit: SolitaireSuit) {
     if (!selected) {
       if (state.foundations[suit].length > 0) {
@@ -142,6 +173,49 @@ export function SolitaireGame() {
     }
   }
 
+  function autoFinish() {
+    setState((current) => {
+      let next = current;
+      let moved = true;
+      let guard = 0;
+
+      while (moved && guard < 220) {
+        moved = false;
+        guard += 1;
+
+        const sources: SolitaireSource[] = [];
+        if (next.waste.length > 0) {
+          sources.push({ type: 'waste' });
+        }
+        next.tableau.forEach((column, columnIndex) => {
+          if (column.length > 0) {
+            sources.push({ type: 'tableau', column: columnIndex, index: column.length - 1 });
+          }
+        });
+
+        for (const source of sources) {
+          let foundMove = false;
+          for (const suit of foundationSuits) {
+            const candidate = moveSolitaireToFoundation(next, source, suit);
+            if (candidate !== next) {
+              next = candidate;
+              moved = true;
+              foundMove = true;
+              break;
+            }
+          }
+
+          if (foundMove) {
+            break;
+          }
+        }
+      }
+
+      return next;
+    });
+    setSelected(null);
+  }
+
   const cardSize = { width: cardWidth, height: cardHeight };
 
   return (
@@ -159,13 +233,32 @@ export function SolitaireGame() {
         <Text style={styles.stockText}>{state.drawMode === 'three' ? `${state.recyclesUsed}/3 reprises` : 'Reprises libres'}</Text>
       </View>
 
+      {state.status === 'won' || stockLocked ? (
+        <View style={[styles.endEffect, state.status === 'won' ? styles.endWin : styles.endBlocked]}>
+          <View style={styles.endFan}>
+            {foundationSuits.map((suit, index) => (
+              <View key={suit} style={[styles.endMiniCard, { transform: [{ rotate: `${index * 11 - 16}deg` }] }]}>
+                <Text style={styles.endMiniSuit}>{suitLabel(suit)}</Text>
+              </View>
+            ))}
+          </View>
+          <Text style={styles.endEffectText}>{state.status === 'won' ? 'Victoire' : 'Partie bloquee'}</Text>
+        </View>
+      ) : null}
+
+      {canAutoFinish ? (
+        <Pressable style={styles.autoFinishButton} onPress={autoFinish}>
+          <Text style={styles.autoFinishText}>Finir automatiquement</Text>
+        </Pressable>
+      ) : null}
+
       <View style={[styles.topRow, { gap: topGap, width: tableauWidth }]}>
         <Pressable style={[styles.slot, cardSize, styles.stockSlot, stockLocked && styles.lockedSlot]} onPress={draw}>
           <Text style={styles.stockCount}>{state.stock.length}</Text>
           <Text style={styles.slotLabel}>{state.stock.length > 0 ? 'Pioche' : state.waste.length > 0 ? 'Reprendre' : 'Vide'}</Text>
         </Pressable>
 
-        <Pressable style={[styles.slot, cardSize]} onPress={selectWaste}>
+        <Pressable style={[styles.slot, cardSize]} onPress={() => pressCard('waste', { type: 'waste' }, selectWaste)}>
           {visibleWaste ? (
             <CardView card={visibleWaste} selected={selected?.type === 'waste'} width={cardWidth} height={cardHeight} />
           ) : (
@@ -206,7 +299,11 @@ export function SolitaireGame() {
                       top: cardIndex * (card.faceUp ? cardHeight * 0.27 : cardHeight * 0.16),
                     },
                   ]}
-                  onPress={() => pressTableau(columnIndex, cardIndex)}>
+                  onPress={() =>
+                    pressCard(`tableau-${columnIndex}-${card.id}`, { type: 'tableau', column: columnIndex, index: cardIndex }, () =>
+                      pressTableau(columnIndex, cardIndex),
+                    )
+                  }>
                   <CardView
                     card={card}
                     selected={selected?.type === 'tableau' && selected.column === columnIndex && cardIndex >= selected.index}
@@ -315,6 +412,66 @@ const styles = StyleSheet.create({
   stockText: {
     color: '#53635D',
     fontWeight: '800',
+  },
+  endEffect: {
+    minHeight: 84,
+    borderRadius: 8,
+    borderWidth: 3,
+    borderColor: '#22342F',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  endWin: {
+    backgroundColor: '#F6C85F',
+  },
+  endBlocked: {
+    backgroundColor: '#AA2E35',
+  },
+  endFan: {
+    position: 'absolute',
+    width: 180,
+    height: 86,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  endMiniCard: {
+    position: 'absolute',
+    width: 42,
+    height: 58,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#191A1F',
+    backgroundColor: '#F8EFE1',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  endMiniSuit: {
+    color: '#191A1F',
+    fontSize: 24,
+    fontWeight: '900',
+  },
+  endEffectText: {
+    color: '#191A1F',
+    fontSize: 24,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  autoFinishButton: {
+    minHeight: 44,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#22342F',
+    backgroundColor: '#F6C85F',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+  },
+  autoFinishText: {
+    color: '#22342F',
+    fontSize: 15,
+    fontWeight: '900',
+    textTransform: 'uppercase',
   },
   topRow: {
     flexDirection: 'row',
