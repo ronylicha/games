@@ -83,6 +83,19 @@ const games = [
       'Choisis une pioche infinie ou limitée à trois passages.',
     ],
   },
+  {
+    href: '/street-brawl',
+    title: 'Street Brawl',
+    preview: 'street-brawl',
+    accent: '#26C4A6',
+    background: '#E8FFF7',
+    rules: [
+      'Traverse 50 niveaux de Vesper City et sauvegarde automatiquement ta progression.',
+      'Enchaine combo, attaque lourde, dash et fury pour nettoyer chaque zone.',
+      'Ramasse soins, energie, armes blanches, bouclier, vitesse, force et multiplicateur de score.',
+      'Sur mobile, joue en paysage. Sur web, utilise WASD/fleches, J, K, L et Shift/Espace.',
+    ],
+  },
 ] as const;
 
 type Game = (typeof games)[number];
@@ -133,7 +146,7 @@ export default function HomeScreen() {
                   <Text style={[styles.helpText, { color: game.accent }]}>?</Text>
                 </Pressable>
 
-                <Link href={game.href} asChild>
+                <Link href={game.href as never} asChild>
                   <Pressable style={({ pressed }) => [styles.gameLaunch, pressed && styles.pressed]}>
                     <GamePreview type={game.preview} accent={game.accent} index={index} />
                     <View style={styles.cardFooter}>
@@ -202,6 +215,22 @@ function GamePreview({ type, accent, index }: { type: Game['preview']; accent: s
         </View>
         <Image source={require('@/assets/game/checkers/ivory-king.png')} style={[styles.floatingPiece, styles.leftPiece]} />
         <Image source={require('@/assets/game/checkers/red-king.png')} style={[styles.floatingPiece, styles.rightPiece]} />
+      </View>
+    );
+  }
+
+  if (type === 'street-brawl') {
+    return (
+      <View style={[styles.preview, { backgroundColor: '#171329' }]}>
+        <Image source={require('@/assets/game/street-brawl/bg-downtown.png')} style={styles.brawlBack} contentFit="cover" />
+        <View style={[styles.diagonalBand, { backgroundColor: accent, opacity: 0.64 }]} />
+        <Image source={require('@/assets/game/street-brawl/player-fury.png')} style={styles.brawlHero} contentFit="contain" />
+        <Image source={require('@/assets/game/street-brawl/grunt-attack.png')} style={[styles.brawlEnemy, styles.brawlEnemyLeft]} contentFit="contain" />
+        <Image source={require('@/assets/game/street-brawl/bruiser-idle.png')} style={[styles.brawlEnemy, styles.brawlEnemyRight]} contentFit="contain" />
+        <View style={styles.brawlHud}>
+          <View style={styles.brawlMeter} />
+          <View style={[styles.brawlMeter, styles.brawlMeterFury]} />
+        </View>
       </View>
     );
   }
@@ -497,6 +526,51 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
+  },
+  brawlBack: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+  },
+  brawlHero: {
+    position: 'absolute',
+    width: 88,
+    height: 122,
+    bottom: 12,
+  },
+  brawlEnemy: {
+    position: 'absolute',
+    width: 66,
+    height: 96,
+    bottom: 14,
+    opacity: 0.94,
+  },
+  brawlEnemyLeft: {
+    left: 72,
+  },
+  brawlEnemyRight: {
+    right: 66,
+    width: 82,
+    height: 110,
+  },
+  brawlHud: {
+    position: 'absolute',
+    left: 16,
+    top: 14,
+    width: 96,
+    gap: 5,
+  },
+  brawlMeter: {
+    height: 8,
+    borderWidth: 2,
+    borderColor: '#101820',
+    backgroundColor: '#E94B5F',
+  },
+  brawlMeterFury: {
+    width: 68,
+    backgroundColor: '#8E5CFF',
   },
   diagonalBand: {
     position: 'absolute',
