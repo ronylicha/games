@@ -27,7 +27,9 @@ export function GameStage({ title, subtitle, children }: GameStageProps) {
           <BackButton />
           <View style={styles.header}>
             <Text style={styles.eyebrow}>Jeux duel</Text>
-            <Text style={styles.title}>{title}</Text>
+            <Text numberOfLines={2} style={styles.title}>
+              {title}
+            </Text>
             <Text style={styles.subtitle}>{subtitle}</Text>
           </View>
           {children}
@@ -63,8 +65,9 @@ const styles = StyleSheet.create({
   },
   title: {
     color: '#191A1F',
-    fontSize: 34,
+    fontSize: 30,
     fontWeight: '900',
+    lineHeight: 34,
   },
   subtitle: {
     color: '#53635D',

@@ -2,7 +2,7 @@
   "name": "games",
   "description": "Collection Expo React Native de jeux classiques jouables sur mobile et sur le web: dames, échecs, backgammon, dominos, solitaire et Dino Run.",
   "main": "index",
-  "version": "1.2.0",
+  "version": "1.5.0",
   "license": "GPL-3.0-only",
   "dependencies": {
     "@expo/ui": "~56.0.15",

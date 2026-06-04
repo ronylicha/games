@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Image } from 'expo-image';
-import { Link } from 'expo-router';
+import { Link, router } from 'expo-router';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -122,6 +122,19 @@ const games = [
       'Sur mobile, joue en paysage. Sur web, utilise WASD/fleches, J, K, L et Shift/Espace.',
     ],
   },
+  {
+    href: '/vallombre',
+    title: 'Les Cendres de Vallombre',
+    preview: 'vallombre',
+    accent: '#C98036',
+    background: '#F2E4CC',
+    rules: [
+      'Explore les 12 pièces du manoir et clique les points chauds pour collecter les indices.',
+      'Interroge les 6 suspects et présente les preuves qui contredisent leurs mensonges.',
+      'Relie les indices sur le Tableau de Liège pour ouvrir les zones verrouillées et la chronologie.',
+      'Rends ton accusation finale: le trio Qui, Comment et Pourquoi détermine une des 5 fins.',
+    ],
+  },
 ] as const;
 
 type Game = (typeof games)[number];
@@ -172,17 +185,46 @@ export default function HomeScreen() {
                   <Text style={[styles.helpText, { color: game.accent }]}>?</Text>
                 </Pressable>
 
-                <Link href={game.href as never} asChild>
-                  <Pressable style={({ pressed }) => [styles.gameLaunch, pressed && styles.pressed]}>
+                {game.preview === 'vallombre' ? (
+                  <View style={styles.gameLaunch}>
                     <GamePreview type={game.preview} accent={game.accent} index={index} />
-                    <View style={styles.cardFooter}>
-                      <Text style={styles.gameTitle}>{game.title}</Text>
-                      <View style={[styles.playPill, { backgroundColor: game.accent }]}>
-                        <Text style={styles.playText}>Jouer</Text>
+                    <View style={[styles.cardFooter, styles.vallombreFooter]}>
+                      <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.58} style={styles.vallombreCardTitle}>
+                        {game.title}
+                      </Text>
+                      <View style={styles.vallombreActions}>
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel="Nouvelle partie Vallombre"
+                          onPress={() => router.push('/vallombre?start=new' as never)}
+                          style={({ pressed }) => [styles.vallombreActionPrimary, { backgroundColor: game.accent }, pressed && styles.pressed]}>
+                          <Text style={styles.vallombreActionText}>Nouvelle partie</Text>
+                        </Pressable>
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel="Reprendre Vallombre"
+                          onPress={() => router.push('/vallombre?start=resume' as never)}
+                          style={({ pressed }) => [styles.vallombreActionSecondary, pressed && styles.pressed]}>
+                          <Text style={styles.vallombreResumeText}>Reprendre</Text>
+                        </Pressable>
                       </View>
                     </View>
-                  </Pressable>
-                </Link>
+                  </View>
+                ) : (
+                  <Link href={game.href as never} asChild>
+                    <Pressable style={({ pressed }) => [styles.gameLaunch, pressed && styles.pressed]}>
+                      <GamePreview type={game.preview} accent={game.accent} index={index} />
+                      <View style={styles.cardFooter}>
+                      <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.62} style={styles.gameTitle}>
+                        {game.title}
+                      </Text>
+                        <View style={[styles.playPill, { backgroundColor: game.accent }]}>
+                          <Text style={styles.playText}>Jouer</Text>
+                        </View>
+                      </View>
+                    </Pressable>
+                  </Link>
+                )}
               </View>
             ))}
           </View>
@@ -348,6 +390,22 @@ function GamePreview({ type, accent, index }: { type: Game['preview']; accent: s
         <Image source={require('@/assets/game/connect-four/preview-board.png')} style={styles.connectBoardPreview} contentFit="contain" />
         <Image source={require('@/assets/game/connect-four/disc-red.png')} style={[styles.connectDiscPreview, styles.connectDiscLeft]} contentFit="contain" />
         <Image source={require('@/assets/game/connect-four/disc-yellow.png')} style={[styles.connectDiscPreview, styles.connectDiscRight]} contentFit="contain" />
+      </View>
+    );
+  }
+
+  if (type === 'vallombre') {
+    return (
+      <View style={[styles.preview, { backgroundColor: '#151820' }]}>
+        <Image source={require('@/assets/game/vallombre/home-preview.png')} style={styles.vallombreBack} contentFit="cover" />
+        <View style={styles.vallombreShade} />
+        <View style={[styles.diagonalBand, { backgroundColor: accent, opacity: 0.62, transform: [{ rotate: '-16deg' }] }]} />
+        <Image source={require('@/assets/game/vallombre/char-victor-neutre.png')} style={styles.vallombreSuspect} contentFit="contain" />
+        <Image source={require('@/assets/game/vallombre/prop-19.png')} style={styles.vallombrePropClock} contentFit="contain" />
+        <Image source={require('@/assets/game/vallombre/prop-13.png')} style={styles.vallombrePropKnife} contentFit="contain" />
+        <View style={styles.vallombreCaseFile}>
+          <Text style={styles.vallombreCaseText}>23:47</Text>
+        </View>
       </View>
     );
   }
@@ -649,6 +707,19 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
   },
+  vallombreFooter: {
+    minHeight: 104,
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  vallombreCardTitle: {
+    color: '#101820',
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: 0,
+  },
   gameTitle: {
     flex: 1,
     minWidth: 0,
@@ -672,6 +743,49 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '900',
     textTransform: 'uppercase',
+  },
+  vallombreActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-start',
+    gap: 8,
+  },
+  vallombreActionPrimary: {
+    flexGrow: 1,
+    minHeight: 38,
+    minWidth: 132,
+    borderRadius: 8,
+    borderWidth: 3,
+    borderColor: '#101820',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+  },
+  vallombreActionSecondary: {
+    flexGrow: 1,
+    minHeight: 38,
+    minWidth: 104,
+    borderRadius: 8,
+    borderWidth: 3,
+    borderColor: '#101820',
+    backgroundColor: '#FFF8E4',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+  },
+  vallombreActionText: {
+    color: '#101820',
+    fontSize: 13,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    textAlign: 'center',
+  },
+  vallombreResumeText: {
+    color: '#101820',
+    fontSize: 13,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    textAlign: 'center',
   },
   modalBackdrop: {
     flex: 1,
@@ -1000,6 +1114,63 @@ const styles = StyleSheet.create({
   connectDiscRight: {
     right: 58,
     bottom: 22,
+  },
+  vallombreBack: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+  },
+  vallombreShade: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(8, 11, 16, 0.34)',
+  },
+  vallombreSuspect: {
+    position: 'absolute',
+    right: 36,
+    bottom: -18,
+    width: 112,
+    height: 166,
+  },
+  vallombrePropClock: {
+    position: 'absolute',
+    left: 38,
+    top: 18,
+    width: 74,
+    height: 74,
+    transform: [{ rotate: '-9deg' }],
+  },
+  vallombrePropKnife: {
+    position: 'absolute',
+    left: 108,
+    bottom: 20,
+    width: 78,
+    height: 78,
+    transform: [{ rotate: '12deg' }],
+  },
+  vallombreCaseFile: {
+    position: 'absolute',
+    left: 34,
+    bottom: 20,
+    minWidth: 84,
+    height: 38,
+    borderRadius: 8,
+    borderWidth: 3,
+    borderColor: '#101820',
+    backgroundColor: '#F2E4CC',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transform: [{ rotate: '-4deg' }],
+  },
+  vallombreCaseText: {
+    color: '#101820',
+    fontSize: 17,
+    fontWeight: '900',
   },
   dinoSun: {
     position: 'absolute',
