@@ -5,7 +5,9 @@ export default function TabLayout() {
   const colorScheme = useColorScheme();
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack screenOptions={{ headerShown: false }} />
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="vallombre" options={{ orientation: 'landscape' }} />
+      </Stack>
     </ThemeProvider>
   );
 }

@@ -4,8 +4,8 @@
     "description": "Collection de jeux classiques jouables sur mobile et sur le web: dames, échecs, backgammon, dominos, solitaire et Dino Run.",
     "slug": "games",
     "owner": "ronylicha",
-    "version": "1.5.0",
-    "orientation": "portrait",
+    "version": "1.5.5",
+    "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "games",
     "userInterfaceStyle": "automatic",
@@ -14,7 +14,7 @@
     },
     "android": {
       "package": "com.ronylicha.games",
-      "versionCode": 150,
+      "versionCode": 155,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",

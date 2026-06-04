@@ -1,35 +1,115 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image } from 'expo-image';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View, type ImageSourcePropType } from 'react-native';
+import { router } from 'expo-router';
+import * as ScreenOrientation from 'expo-screen-orientation';
+import { StatusBar } from 'expo-status-bar';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, type ImageSourcePropType } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
-  attemptVallombreLink,
-  createVallombreState,
-  findCharacter,
-  findClue,
-  findEnding,
-  findLocation,
-  inspectHotspot,
-  isLocationUnlocked,
-  presentContradiction,
-  requiredLinksComplete,
-  resolveVallombreEnding,
-  setVerdictChoice,
   vallombreCharacters,
-  vallombreDialogues,
-  vallombreIntroScenes,
+  vallombreClues,
   vallombreLinks,
-  vallombreLocations,
   type VallombreCharacterId,
   type VallombreClueId,
-  type VallombreScreen,
-  type VallombreState,
+  type VallombreLinkId,
 } from '@/game/vallombre';
 
-const STORAGE_KEY = 'games:vallombre:state:v1';
+const STORAGE_KEY = 'games:vallombre:renpy-state:v1';
 
-const backgrounds: Record<string, ImageSourcePropType> = {
+type Phase =
+  | 'title'
+  | 'initial-bureau'
+  | 'hub'
+  | 'locations'
+  | 'suspects'
+  | 'location'
+  | 'interrogation'
+  | 'notebook'
+  | 'corkboard'
+  | 'recon1'
+  | 'recon2'
+  | 'recon3-q1'
+  | 'recon3-q2'
+  | 'recon3-q3'
+  | 'accuse-who'
+  | 'accuse-how'
+  | 'accuse-why'
+  | 'ending';
+
+type LocationId = 'bureau' | 'biblio' | 'salle' | 'salon' | 'cuisine' | 'serre' | 'helene-room' | 'victor-room' | 'grenier' | 'cave';
+type Expression = 'neutre' | 'inquiet' | 'colere' | 'ment' | 'effondre';
+type BgKey =
+  | 'bg-01'
+  | 'bg-02'
+  | 'bg-03'
+  | 'bg-04'
+  | 'bg-05'
+  | 'bg-06'
+  | 'bg-07'
+  | 'bg-08'
+  | 'bg-09'
+  | 'bg-10'
+  | 'bg-11'
+  | 'bg-12'
+  | 'bg-13'
+  | 'bg-14'
+  | 'bg-15'
+  | 'bg-16'
+  | 'bg-17'
+  | 'bg-hall';
+
+type Line = {
+  bg?: BgKey;
+  speaker?: string;
+  text: string;
+  character?: VallombreCharacterId;
+  expression?: Expression;
+  align?: 'left' | 'center' | 'right';
+};
+
+type Queue = {
+  lines: Line[];
+  index: number;
+  returnPhase: Phase;
+  returnLocation?: LocationId;
+  returnSuspect?: VallombreCharacterId;
+};
+
+type VallombreRenpyState = {
+  phase: Phase;
+  bg: BgKey;
+  currentLocation: LocationId;
+  currentSuspect: VallombreCharacterId;
+  clues: VallombreClueId[];
+  links: VallombreLinkId[];
+  linkCount: number;
+  suspicion: Record<VallombreCharacterId, number>;
+  presented: string[];
+  chronoDiner: boolean;
+  chronoVerre: boolean;
+  chronoMeurtre: boolean;
+  qui: VallombreCharacterId | 'none';
+  commentCorrect: boolean;
+  pourquoiCorrect: boolean;
+  endingId: 'end-a' | 'end-b' | 'end-c' | 'end-d' | 'end-e' | null;
+  queue: Queue | null;
+  lastLine: Line;
+};
+
+type VallombreGameProps = {
+  startMode?: 'new' | 'resume';
+};
+
+type Choice = {
+  label: string;
+  hint?: string;
+  disabled?: boolean;
+  onPress: () => void;
+};
+
+const backgrounds: Record<BgKey, ImageSourcePropType> = {
   'bg-01': require('@/assets/game/vallombre/bg-01.png'),
   'bg-02': require('@/assets/game/vallombre/bg-02.png'),
   'bg-03': require('@/assets/game/vallombre/bg-03.png'),
@@ -47,13 +127,55 @@ const backgrounds: Record<string, ImageSourcePropType> = {
   'bg-15': require('@/assets/game/vallombre/bg-15.png'),
   'bg-16': require('@/assets/game/vallombre/bg-16.png'),
   'bg-17': require('@/assets/game/vallombre/bg-17.png'),
-  'intro-01': require('@/assets/game/vallombre/intro-01.png'),
-  'intro-02': require('@/assets/game/vallombre/intro-02.png'),
-  'intro-03': require('@/assets/game/vallombre/intro-03.png'),
-  'intro-04': require('@/assets/game/vallombre/intro-04.png'),
+  'bg-hall': require('@/assets/game/vallombre/bg-hall.png'),
 };
 
-const props: Record<VallombreClueId, ImageSourcePropType> = {
+const characterAssets: Record<VallombreCharacterId, Record<Expression, ImageSourcePropType>> = {
+  helene: {
+    neutre: require('@/assets/game/vallombre/char-helene-neutre.png'),
+    inquiet: require('@/assets/game/vallombre/char-helene-inquiet.png'),
+    colere: require('@/assets/game/vallombre/char-helene-colere.png'),
+    ment: require('@/assets/game/vallombre/char-helene-ment.png'),
+    effondre: require('@/assets/game/vallombre/char-helene-effondre.png'),
+  },
+  theodore: {
+    neutre: require('@/assets/game/vallombre/char-theodore-neutre.png'),
+    inquiet: require('@/assets/game/vallombre/char-theodore-inquiet.png'),
+    colere: require('@/assets/game/vallombre/char-theodore-colere.png'),
+    ment: require('@/assets/game/vallombre/char-theodore-ment.png'),
+    effondre: require('@/assets/game/vallombre/char-theodore-effondre.png'),
+  },
+  garance: {
+    neutre: require('@/assets/game/vallombre/char-garance-neutre.png'),
+    inquiet: require('@/assets/game/vallombre/char-garance-inquiet.png'),
+    colere: require('@/assets/game/vallombre/char-garance-colere.png'),
+    ment: require('@/assets/game/vallombre/char-garance-ment.png'),
+    effondre: require('@/assets/game/vallombre/char-garance-effondre.png'),
+  },
+  foucher: {
+    neutre: require('@/assets/game/vallombre/char-foucher-neutre.png'),
+    inquiet: require('@/assets/game/vallombre/char-foucher-inquiet.png'),
+    colere: require('@/assets/game/vallombre/char-foucher-colere.png'),
+    ment: require('@/assets/game/vallombre/char-foucher-ment.png'),
+    effondre: require('@/assets/game/vallombre/char-foucher-effondre.png'),
+  },
+  victor: {
+    neutre: require('@/assets/game/vallombre/char-victor-neutre.png'),
+    inquiet: require('@/assets/game/vallombre/char-victor-inquiet.png'),
+    colere: require('@/assets/game/vallombre/char-victor-colere.png'),
+    ment: require('@/assets/game/vallombre/char-victor-ment.png'),
+    effondre: require('@/assets/game/vallombre/char-victor-effondre.png'),
+  },
+  camille: {
+    neutre: require('@/assets/game/vallombre/char-camille-neutre.png'),
+    inquiet: require('@/assets/game/vallombre/char-camille-inquiet.png'),
+    colere: require('@/assets/game/vallombre/char-camille-colere.png'),
+    ment: require('@/assets/game/vallombre/char-camille-ment.png'),
+    effondre: require('@/assets/game/vallombre/char-camille-effondre.png'),
+  },
+};
+
+const propAssets: Record<VallombreClueId, ImageSourcePropType> = {
   'clu-01': require('@/assets/game/vallombre/prop-01.png'),
   'clu-02': require('@/assets/game/vallombre/prop-02.png'),
   'clu-03': require('@/assets/game/vallombre/prop-03.png'),
@@ -76,1198 +198,829 @@ const props: Record<VallombreClueId, ImageSourcePropType> = {
   'clu-20': require('@/assets/game/vallombre/prop-20.png'),
 };
 
-const characterAssets: Record<VallombreCharacterId, Record<'neutre' | 'inquiet' | 'colere' | 'ment' | 'effondre' | 'sourire' | 'demasque', ImageSourcePropType>> = {
-  helene: {
-    neutre: require('@/assets/game/vallombre/char-helene-neutre.png'),
-    inquiet: require('@/assets/game/vallombre/char-helene-inquiet.png'),
-    colere: require('@/assets/game/vallombre/char-helene-colere.png'),
-    ment: require('@/assets/game/vallombre/char-helene-ment.png'),
-    effondre: require('@/assets/game/vallombre/char-helene-effondre.png'),
-    sourire: require('@/assets/game/vallombre/char-helene-sourire.png'),
-    demasque: require('@/assets/game/vallombre/char-helene-demasque.png'),
-  },
-  theodore: {
-    neutre: require('@/assets/game/vallombre/char-theodore-neutre.png'),
-    inquiet: require('@/assets/game/vallombre/char-theodore-inquiet.png'),
-    colere: require('@/assets/game/vallombre/char-theodore-colere.png'),
-    ment: require('@/assets/game/vallombre/char-theodore-ment.png'),
-    effondre: require('@/assets/game/vallombre/char-theodore-effondre.png'),
-    sourire: require('@/assets/game/vallombre/char-theodore-sourire.png'),
-    demasque: require('@/assets/game/vallombre/char-theodore-demasque.png'),
-  },
-  garance: {
-    neutre: require('@/assets/game/vallombre/char-garance-neutre.png'),
-    inquiet: require('@/assets/game/vallombre/char-garance-inquiet.png'),
-    colere: require('@/assets/game/vallombre/char-garance-colere.png'),
-    ment: require('@/assets/game/vallombre/char-garance-ment.png'),
-    effondre: require('@/assets/game/vallombre/char-garance-effondre.png'),
-    sourire: require('@/assets/game/vallombre/char-garance-sourire.png'),
-    demasque: require('@/assets/game/vallombre/char-garance-demasque.png'),
-  },
-  foucher: {
-    neutre: require('@/assets/game/vallombre/char-foucher-neutre.png'),
-    inquiet: require('@/assets/game/vallombre/char-foucher-inquiet.png'),
-    colere: require('@/assets/game/vallombre/char-foucher-colere.png'),
-    ment: require('@/assets/game/vallombre/char-foucher-ment.png'),
-    effondre: require('@/assets/game/vallombre/char-foucher-effondre.png'),
-    sourire: require('@/assets/game/vallombre/char-foucher-sourire.png'),
-    demasque: require('@/assets/game/vallombre/char-foucher-demasque.png'),
-  },
-  victor: {
-    neutre: require('@/assets/game/vallombre/char-victor-neutre.png'),
-    inquiet: require('@/assets/game/vallombre/char-victor-inquiet.png'),
-    colere: require('@/assets/game/vallombre/char-victor-colere.png'),
-    ment: require('@/assets/game/vallombre/char-victor-ment.png'),
-    effondre: require('@/assets/game/vallombre/char-victor-effondre.png'),
-    sourire: require('@/assets/game/vallombre/char-victor-sourire.png'),
-    demasque: require('@/assets/game/vallombre/char-victor-demasque.png'),
-  },
-  camille: {
-    neutre: require('@/assets/game/vallombre/char-camille-neutre.png'),
-    inquiet: require('@/assets/game/vallombre/char-camille-inquiet.png'),
-    colere: require('@/assets/game/vallombre/char-camille-colere.png'),
-    ment: require('@/assets/game/vallombre/char-camille-ment.png'),
-    effondre: require('@/assets/game/vallombre/char-camille-effondre.png'),
-    sourire: require('@/assets/game/vallombre/char-camille-sourire.png'),
-    demasque: require('@/assets/game/vallombre/char-camille-demasque.png'),
-  },
+const characterNames: Record<VallombreCharacterId, string> = {
+  helene: 'Hélène Vallombre',
+  theodore: 'Théodore Vallombre',
+  garance: 'Sœur Garance',
+  foucher: 'Dr Lazare Foucher',
+  victor: 'Victor Nguyen',
+  camille: 'Camille Roux',
 };
 
-const phaseLabels: Record<VallombreState['phase'], string> = {
-  matin: 'Matin',
-  'apres-midi': 'Après-midi',
-  soir: 'Soir',
-  nuit: 'Nuit blanche',
+const locationMeta: Record<LocationId, { title: string; bg: BgKey; intro: string }> = {
+  bureau: { title: "Bureau d'Aldéric", bg: 'bg-04', intro: 'La scène de crime. Cherchons ce que la première fouille a manqué.' },
+  biblio: { title: 'Bibliothèque', bg: 'bg-10', intro: 'Des murs entiers de livres. Et cette étagère, légèrement de travers.' },
+  salle: { title: 'Salle à manger', bg: 'bg-06', intro: "La grande table du dîner d'hier soir." },
+  salon: { title: 'Salon', bg: 'bg-07', intro: 'Le salon. On y a joué, bu, menti.' },
+  cuisine: { title: 'Cuisine', bg: 'bg-12', intro: 'La cuisine de Sœur Garance. Le porte-couteaux a une fente vide.' },
+  serre: { title: "Serre / jardin d'hiver", bg: 'bg-13', intro: 'La serre. La seule terre verte du domaine en plein hiver.' },
+  'helene-room': { title: "Chambre d'Hélène", bg: 'bg-14', intro: "La chambre d'Hélène. Tout y est rangé, sauf elle." },
+  'victor-room': { title: 'Chambre de Victor', bg: 'bg-15', intro: "La chambre du secrétaire. Spartiate. Tout dit la place qu'on lui a faite." },
+  grenier: { title: 'Grenier', bg: 'bg-16', intro: 'Le grenier. Le coffre familial dort sous la poussière.' },
+  cave: { title: 'Cave', bg: 'bg-17', intro: 'La cave. Humide, froide, et cette odeur.' },
 };
 
-type GuidanceAction =
-  | { kind: 'location'; id: VallombreState['currentLocationId']; label: string }
-  | { kind: 'screen'; screen: VallombreScreen; label: string }
-  | { kind: 'character'; id: VallombreCharacterId; label: string };
+const clueLabels: Record<VallombreClueId, string> = Object.fromEntries(vallombreClues.map((clue) => [clue.id, clue.title])) as Record<VallombreClueId, string>;
 
-type VallombreGuidance = {
-  title: string;
-  text: string;
-  reward: string;
-  action?: GuidanceAction;
-  checklist: string[];
-};
+const prologueLines: Line[] = [
+  { bg: 'bg-01', speaker: 'Inspectrice Morane', text: "On m'avait promis une enquête de routine." },
+  { bg: 'bg-01', speaker: 'Inspectrice Morane', text: "On ne m'avait pas dit qu'elle commencerait par dix kilomètres dans la poudreuse." },
+  { bg: 'bg-01', speaker: 'Inspectrice Morane', text: "Ni qu'elle finirait par un mort dans une pièce fermée à clé." },
+  { bg: 'bg-02', speaker: 'Sœur Garance', character: 'garance', expression: 'inquiet', align: 'right', text: 'Inspectrice ? Dieu soit loué.' },
+  { bg: 'bg-02', speaker: 'Sœur Garance', character: 'garance', expression: 'inquiet', align: 'right', text: "Monsieur Aldéric ne se réveille pas. La porte de son bureau est verrouillée. De l'intérieur." },
+  { bg: 'bg-02', speaker: 'Inspectrice Morane', character: 'garance', expression: 'effondre', align: 'right', text: "Verrouillée de l'intérieur. Évidemment." },
+  { bg: 'bg-02', speaker: 'Inspectrice Morane', text: "(Pourquoi est-ce toujours « de l'intérieur » ?)" },
+  { bg: 'bg-03', speaker: 'Inspectrice Morane', text: "La serrure n'a pas joué. Forçons." },
+  { bg: 'bg-04', speaker: 'Inspectrice Morane', text: "Aldéric Vallombre. Soixante-trois ans. Une plaie nette à la tempe." },
+  { bg: 'bg-04', speaker: 'Inspectrice Morane', text: "Et un foyer où l'on a brûlé… beaucoup de papier." },
+  { bg: 'bg-04', speaker: 'Inspectrice Morane', text: "Examinons la pièce avant qu'elle ne refroidisse." },
+];
 
-const officePrimerClues: VallombreClueId[] = ['clu-01', 'clu-03', 'clu-04', 'clu-19'];
-const requiredLinkIds = ['l1', 'l2', 'l3', 'l4'] as const;
+const firstSuspectLines: Line[] = [
+  { bg: 'bg-05', speaker: 'Inspectrice Morane', text: "Ils sont six, coincés ici par la tempête. Écoutons leurs premiers mensonges." },
+  { bg: 'bg-05', speaker: 'Hélène Vallombre', character: 'helene', expression: 'neutre', text: 'Mon mari et moi nous aimions.' },
+  { bg: 'bg-05', speaker: 'Inspectrice Morane', text: "(Le passé du verbe « aimer » est toujours suspect.)" },
+  { bg: 'bg-05', speaker: 'Théodore Vallombre', character: 'theodore', expression: 'neutre', text: 'Père dormait quand je suis monté. Vers onze heures.' },
+  { bg: 'bg-05', speaker: 'Dr Lazare Foucher', character: 'foucher', expression: 'neutre', text: "Je n'ai pas remis les pieds dans ce bureau depuis hier midi." },
+  { bg: 'bg-05', speaker: 'Camille Roux', character: 'camille', expression: 'ment', text: 'Je ne suis ici que pour chanter, inspectrice. Rien d’autre.' },
+  { bg: 'bg-05', speaker: 'Victor Nguyen', character: 'victor', expression: 'inquiet', text: 'Monsieur Vallombre était… un bon employeur.' },
+  { bg: 'bg-05', speaker: 'Sœur Garance', character: 'garance', expression: 'neutre', text: "J'étais à la cuisine toute la nuit. Demandez à qui vous voulez." },
+  { bg: 'bg-05', speaker: 'Inspectrice Morane', text: "Six alibis. Au moins cinq de trop. La tempête nous garde tous jusqu'à l'aube. Au travail." },
+];
 
-type VallombreGameProps = {
-  startMode?: 'new' | 'resume';
+type LinkDef = { id: VallombreLinkId; first: VallombreClueId; second: VallombreClueId; label: string; line: string };
+
+const linkDefs: LinkDef[] = [
+  { id: 'l1', first: 'clu-05', second: 'clu-06', label: "Courant d'air (05) + Étagère (06) → le passage", line: "Le bureau n'était pas clos. Le passage secret devient une voie d'entrée et de fuite." },
+  { id: 'l2', first: 'clu-19', second: 'clu-20', label: "Horloge 23h47 (19) + Verre à deux empreintes (20) → l'heure du crime", line: 'Aldéric a bu avec quelqu’un avant 23h47. Le dernier visiteur devient central.' },
+  { id: 'l3', first: 'clu-13', second: 'clu-18', label: "Coupe-papier lavé (13) + Flacon d'éther (18) → Foucher maquille", line: "Le docteur a nettoyé et arrangé. Ce n'est pas encore le meurtre, mais c'est un second crime." },
+  { id: 'l4', first: 'clu-10', second: 'clu-16', label: 'Empreinte (10) + Boue de la serre (16) → le tueur vient du jardin', line: 'La trace de la bibliothèque et la boue de la serre racontent le même trajet.' },
+  { id: 'l5', first: 'clu-11', second: 'clu-17', label: 'Acte de naissance (11) + Médaillon (17) → Victor & Garance', line: "Victor n'est pas seulement le secrétaire. Garance protège l’enfant caché." },
+  { id: 'l6', first: 'clu-09', second: 'clu-15', label: "Lettre de chantage (09) + Partition (15) → l'emprise d'Aldéric", line: 'Aldéric tenait Camille et les autres par leurs secrets.' },
+  { id: 'l7', first: 'clu-07', second: 'clu-12', label: 'Dettes (07) + Télégramme (12) → Théo, mobile sans occasion', line: 'Théodore avait un mobile visible, mais sa panique ne donne pas encore l’occasion.' },
+];
+
+function freshTitleState(): VallombreRenpyState {
+  return {
+    phase: 'title',
+    bg: 'bg-01',
+    currentLocation: 'bureau',
+    currentSuspect: 'garance',
+    clues: [],
+    links: [],
+    linkCount: 0,
+    suspicion: {
+      helene: 0,
+      theodore: 0,
+      garance: 0,
+      foucher: 0,
+      victor: 0,
+      camille: 0,
+    },
+    presented: [],
+    chronoDiner: false,
+    chronoVerre: false,
+    chronoMeurtre: false,
+    qui: 'none',
+    commentCorrect: false,
+    pourquoiCorrect: false,
+    endingId: null,
+    queue: null,
+    lastLine: { bg: 'bg-01', speaker: 'Les Cendres de Vallombre', text: 'Six suspects, une pièce verrouillée, une vérité brûlée dans le foyer.' },
+  };
+}
+
+function startedState(): VallombreRenpyState {
+  return {
+    ...freshTitleState(),
+    phase: 'initial-bureau',
+    queue: { lines: prologueLines, index: 0, returnPhase: 'initial-bureau', returnLocation: 'bureau' },
+    lastLine: prologueLines[0],
+  };
+}
+
+function normalizeState(raw: VallombreRenpyState): VallombreRenpyState {
+  const base = freshTitleState();
+  return {
+    ...base,
+    ...raw,
+    suspicion: { ...base.suspicion, ...(raw.suspicion ?? {}) },
+    clues: Array.isArray(raw.clues) ? raw.clues : [],
+    links: Array.isArray(raw.links) ? raw.links : [],
+    presented: Array.isArray(raw.presented) ? raw.presented : [],
+    queue: raw.queue?.lines ? raw.queue : null,
+  };
+}
+
+function hasClue(state: VallombreRenpyState, id: VallombreClueId) {
+  return state.clues.includes(id);
+}
+
+function hasLink(state: VallombreRenpyState, id: VallombreLinkId) {
+  return state.links.includes(id);
+}
+
+function canAct3(state: VallombreRenpyState) {
+  return hasClue(state, 'clu-06') && hasClue(state, 'clu-13') && hasClue(state, 'clu-11') && state.chronoDiner && state.chronoVerre;
+}
+
+function displayLineForPhase(state: VallombreRenpyState): Line {
+  if (state.queue) {
+    return state.queue.lines[state.queue.index] ?? state.lastLine;
+  }
+
+  if (state.phase === 'initial-bureau') {
+    return { bg: 'bg-04', speaker: 'Inspectrice Morane', text: 'Le bureau est la première énigme. Tant que foyer, fenêtre, horloge et corps ne parlent pas, personne ne sort.' };
+  }
+
+  if (state.phase === 'hub') {
+    return { bg: 'bg-hall', speaker: 'Inspectrice Morane', text: "Grand Hall. Choisissez votre prochaine action : lieu, suspect, carnet, tableau, puis confrontation quand l'enquête tient debout." };
+  }
+
+  if (state.phase === 'locations') {
+    return { bg: 'bg-hall', speaker: 'Inspectrice Morane', text: 'Où fouiller maintenant ? Chaque pièce fonctionne comme un menu Ren’Py : les choix déjà faits disparaissent.' };
+  }
+
+  if (state.phase === 'suspects') {
+    return { bg: 'bg-05', speaker: 'Inspectrice Morane', text: 'Qui interroger ? Présentez seulement les preuves que vous possédez.' };
+  }
+
+  if (state.phase === 'location') {
+    const location = locationMeta[state.currentLocation];
+    return { bg: location.bg, speaker: 'Inspectrice Morane', text: location.intro };
+  }
+
+  if (state.phase === 'interrogation') {
+    return {
+      bg: 'bg-05',
+      speaker: characterNames[state.currentSuspect],
+      character: state.currentSuspect,
+      expression: state.currentSuspect === 'camille' ? 'ment' : state.currentSuspect === 'victor' ? 'inquiet' : 'neutre',
+      text: interrogationIntro[state.currentSuspect],
+    };
+  }
+
+  if (state.phase === 'notebook') {
+    return { bg: 'bg-hall', speaker: 'Carnet d’indices', text: `${state.clues.length}/20 indices trouvés. Le carnet sert à vérifier ce que vous savez, pas à deviner au hasard.` };
+  }
+
+  if (state.phase === 'corkboard') {
+    return { bg: 'bg-hall', speaker: 'Tableau de liège', text: `${state.linkCount}/7 fils rouges établis. Les liens apparaissent seulement quand les deux indices nécessaires sont dans le carnet.` };
+  }
+
+  if (state.phase.startsWith('recon')) {
+    return { bg: state.phase === 'recon2' ? 'bg-07' : 'bg-09', speaker: 'Reconstitution', text: 'Remettez les faits dans le bon ordre. Aucun échec définitif : une erreur vous renvoie au début de la séquence.' };
+  }
+
+  if (state.phase.startsWith('accuse')) {
+    return { bg: 'bg-09', speaker: 'Accusation', text: 'Nommez la main, l’arme et le mobile. La fin dépend de la précision du raisonnement.' };
+  }
+
+  return state.lastLine;
+}
+
+const interrogationIntro: Record<VallombreCharacterId, string> = {
+  helene: "Posez vos questions. Je n'ai rien à cacher.",
+  theodore: 'Inspectrice. Je vous le redis : je dormais.',
+  garance: "J'étais à la cuisine. Toute la nuit.",
+  foucher: "Je n'ai pas remis les pieds dans ce bureau depuis hier midi.",
+  victor: 'Vous vouliez me voir, inspectrice ?',
+  camille: "Je chante, inspectrice. Je n'enquête pas, et je ne tue pas.",
 };
 
 export function VallombreGame({ startMode }: VallombreGameProps) {
-  const { width } = useWindowDimensions();
-  const sceneWidth = Math.min(width - 48, 860);
-  const sceneHeight = sceneWidth * 0.5625;
+  const { width, height } = useWindowDimensions();
   const [hydrated, setHydrated] = useState(false);
-  const [state, setState] = useState<VallombreState>(() => createVallombreState());
-  const [selectedClues, setSelectedClues] = useState<VallombreClueId[]>([]);
-  const [notebookTab, setNotebookTab] = useState<'indices' | 'profils' | 'chrono' | 'plan'>('indices');
-  const stateRef = useRef(state);
-  const hydratedRef = useRef(false);
-  const startModeHandledRef = useRef(false);
+  const [state, setState] = useState<VallombreRenpyState>(() => (startMode === 'new' ? startedState() : freshTitleState()));
 
-  const saveState = useCallback(async (nextState: VallombreState) => {
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(nextState));
+  useEffect(() => {
+    if (Platform.OS !== 'web') {
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => undefined);
+      return () => {
+        ScreenOrientation.unlockAsync().catch(() => undefined);
+      };
+    }
+
+    return undefined;
   }, []);
-
-  const commitState = useCallback(
-    (nextStateOrUpdater: VallombreState | ((current: VallombreState) => VallombreState)) => {
-      setState((current) => {
-        const nextState = typeof nextStateOrUpdater === 'function' ? nextStateOrUpdater(current) : nextStateOrUpdater;
-        stateRef.current = nextState;
-
-        if (hydratedRef.current) {
-          saveState(nextState).catch(() => undefined);
-        }
-
-        return nextState;
-      });
-    },
-    [saveState],
-  );
 
   useEffect(() => {
     let mounted = true;
+    if (startMode === 'new') {
+      AsyncStorage.removeItem(STORAGE_KEY)
+        .catch(() => undefined)
+        .finally(() => {
+          if (mounted) setHydrated(true);
+        });
+      return () => {
+        mounted = false;
+      };
+    }
+
     AsyncStorage.getItem(STORAGE_KEY)
       .then((raw) => {
-        if (!raw || !mounted) return;
-        const parsed = JSON.parse(raw) as VallombreState;
-        if (parsed?.screen && Array.isArray(parsed.discoveredClues)) {
-          const restored = {
-            ...createVallombreState(),
-            ...parsed,
-            introStep: Number.isInteger(parsed.introStep) ? parsed.introStep : 0,
-          };
-          stateRef.current = restored;
-          setState(restored);
+        if (!mounted || !raw) return;
+        const parsed = JSON.parse(raw) as VallombreRenpyState;
+        if (parsed?.phase) {
+          setState(normalizeState(parsed));
         }
       })
       .catch(() => undefined)
       .finally(() => {
-        if (mounted) {
-          hydratedRef.current = true;
-          setHydrated(true);
-          saveState(stateRef.current).catch(() => undefined);
-        }
+        if (mounted) setHydrated(true);
       });
     return () => {
       mounted = false;
     };
-  }, [saveState]);
+  }, [startMode]);
 
   useEffect(() => {
-    if (!hydrated) return;
-    stateRef.current = state;
-    saveState(state).catch(() => undefined);
-  }, [hydrated, saveState, state]);
-
-  useEffect(() => {
-    if (!hydrated || startModeHandledRef.current) {
-      return;
+    if (hydrated) {
+      AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state)).catch(() => undefined);
     }
+  }, [hydrated, state]);
 
-    startModeHandledRef.current = true;
-    if (startMode === 'new') {
-      const fresh = createVallombreState();
-      commitState({ ...fresh, screen: 'intro', introStep: 0 });
-    }
-  }, [commitState, hydrated, startMode]);
+  const update = useCallback((updater: (current: VallombreRenpyState) => VallombreRenpyState) => {
+    setState((current) => normalizeState(updater(current)));
+  }, []);
 
-  useEffect(() => {
-    const flush = () => {
-      if (hydratedRef.current) {
-        saveState(stateRef.current).catch(() => undefined);
-      }
-    };
-
-    const subscription = AppState.addEventListener('change', (status) => {
-      if (status !== 'active') {
-        flush();
-      }
-    });
-    const interval = setInterval(flush, 5000);
-
-    if (Platform.OS === 'web') {
-      globalThis.addEventListener?.('beforeunload', flush);
-      globalThis.addEventListener?.('pagehide', flush);
-      document?.addEventListener?.('visibilitychange', flush);
-    }
-
-    return () => {
-      subscription.remove();
-      clearInterval(interval);
-      if (Platform.OS === 'web') {
-        globalThis.removeEventListener?.('beforeunload', flush);
-        globalThis.removeEventListener?.('pagehide', flush);
-        document?.removeEventListener?.('visibilitychange', flush);
-      }
-    };
-  }, [saveState]);
-
-  const discovered = useMemo(() => state.discoveredClues.map(findClue), [state.discoveredClues]);
-  const canAccuse = requiredLinksComplete(state);
-  const guidance = useMemo(() => getVallombreGuidance(state), [state]);
-
-  const patchState = useCallback((patch: Partial<VallombreState>) => {
-    commitState((current) => ({ ...current, ...patch }));
-  }, [commitState]);
-
-  function newGame() {
-    const fresh = createVallombreState();
-    setSelectedClues([]);
-    commitState({ ...fresh, screen: 'intro', introStep: 0 });
-  }
-
-  function go(screen: VallombreScreen) {
-    patchState({ screen });
-  }
-
-  function openLocation(id: VallombreState['currentLocationId']) {
-    if (!isLocationUnlocked(state, id)) return;
-    patchState({ currentLocationId: id, screen: 'location', lastMessage: findLocation(id).summary });
-  }
-
-  function openCharacter(id: VallombreCharacterId) {
-    patchState({ currentCharacterId: id, screen: 'dialogue', lastMessage: findCharacter(id).intro });
-  }
-
-  function runGuidanceAction() {
-    if (!guidance?.action) {
-      return;
-    }
-
-    if (guidance.action.kind === 'location') {
-      openLocation(guidance.action.id);
-      return;
-    }
-
-    if (guidance.action.kind === 'character') {
-      openCharacter(guidance.action.id);
-      return;
-    }
-
-    go(guidance.action.screen);
-  }
-
-  function inspect(id: string) {
-    commitState((current) => inspectHotspot(current, id));
-  }
-
-  function advanceIntro() {
-    const nextStep = state.introStep + 1;
-    if (nextStep >= vallombreIntroScenes.length) {
-      patchState({
-        screen: 'hub',
-        introStep: vallombreIntroScenes.length - 1,
-        lastMessage: 'Le hall devient ton point de départ. Fouille le bureau, interroge les suspects, puis relie les indices.',
+  const queueLines = useCallback(
+    (lines: Line[], returnPhase: Phase, patch: Partial<VallombreRenpyState> = {}) => {
+      update((current) => {
+        const nextLines = lines.length > 0 ? lines : [current.lastLine];
+        return {
+          ...current,
+          ...patch,
+          bg: nextLines[0].bg ?? current.bg,
+          phase: returnPhase,
+          queue: {
+            lines: nextLines,
+            index: 0,
+            returnPhase,
+            returnLocation: patch.currentLocation ?? current.currentLocation,
+            returnSuspect: patch.currentSuspect ?? current.currentSuspect,
+          },
+          lastLine: nextLines[0],
+        };
       });
-      return;
+    },
+    [update],
+  );
+
+  const addClue = useCallback(
+    (id: VallombreClueId, lines: Line[], returnPhase: Phase, patch: Partial<VallombreRenpyState> = {}) => {
+      queueLines(lines, returnPhase, {
+        ...patch,
+        clues: state.clues.includes(id) ? state.clues : [...state.clues, id],
+      });
+    },
+    [queueLines, state.clues],
+  );
+
+  const continueQueue = useCallback(() => {
+    update((current) => {
+      if (!current.queue) return current;
+      const nextIndex = current.queue.index + 1;
+      if (nextIndex < current.queue.lines.length) {
+        const line = current.queue.lines[nextIndex];
+        return {
+          ...current,
+          bg: line.bg ?? current.bg,
+          queue: { ...current.queue, index: nextIndex },
+          lastLine: line,
+        };
+      }
+
+      const lastLine = current.queue.lines[current.queue.lines.length - 1] ?? current.lastLine;
+      return {
+        ...current,
+        bg: lastLine.bg ?? current.bg,
+        phase: current.queue.returnPhase,
+        currentLocation: current.queue.returnLocation ?? current.currentLocation,
+        currentSuspect: current.queue.returnSuspect ?? current.currentSuspect,
+        queue: null,
+        lastLine,
+      };
+    });
+  }, [update]);
+
+  const startNewGame = useCallback(() => {
+    setState(startedState());
+  }, []);
+
+  const currentLine = displayLineForPhase(state);
+  const choices = useMemo<Choice[]>(() => {
+    if (state.queue) {
+      return [{ label: 'Continuer', onPress: continueQueue }];
     }
 
-    patchState({
-      introStep: nextStep,
-      lastMessage: vallombreIntroScenes[nextStep].title,
-    });
-  }
+    if (state.phase === 'title') {
+      return [
+        { label: 'Nouvelle enquête', hint: 'Démarre au trajet dans la neige, comme le script source.', onPress: startNewGame },
+        { label: 'Reprendre', hint: hydrated ? 'Charge la sauvegarde automatique.' : 'Chargement de la sauvegarde...', disabled: !hydrated, onPress: () => undefined },
+        { label: 'Retour accueil', onPress: () => router.back() },
+      ];
+    }
 
-  function skipIntro() {
-    patchState({
-      screen: 'hub',
-      introStep: vallombreIntroScenes.length - 1,
-      lastMessage: 'Morane entre dans le hall. La maison est close, les suspects aussi.',
-    });
-  }
+    if (state.phase === 'initial-bureau') return initialBureauChoices(state, addClue, queueLines);
+    if (state.phase === 'hub') return hubChoices(state, update, queueLines);
+    if (state.phase === 'locations') return locationListChoices(update);
+    if (state.phase === 'suspects') return suspectListChoices(update);
+    if (state.phase === 'location') return locationChoices(state, addClue, queueLines, update);
+    if (state.phase === 'interrogation') return interrogationChoices(state, queueLines, update);
+    if (state.phase === 'notebook') return [{ label: '↩ Retour au hall', onPress: () => update((current) => ({ ...current, phase: 'hub', bg: 'bg-hall' })) }];
+    if (state.phase === 'corkboard') return corkboardChoices(state, queueLines, update);
+    if (state.phase === 'recon1') return recon1Choices(queueLines);
+    if (state.phase === 'recon2') return recon2Choices(queueLines);
+    if (state.phase === 'recon3-q1') return recon3Q1Choices(queueLines, update);
+    if (state.phase === 'recon3-q2') return recon3Q2Choices(queueLines);
+    if (state.phase === 'recon3-q3') return recon3Q3Choices(queueLines);
+    if (state.phase === 'accuse-who') return accuseWhoChoices(update);
+    if (state.phase === 'accuse-how') return accuseHowChoices(state, update);
+    if (state.phase === 'accuse-why') return accuseWhyChoices(state, update);
+    if (state.phase === 'ending') return [{ label: 'Nouvelle enquête', onPress: startNewGame }, { label: 'Retour accueil', onPress: () => router.back() }];
+    return [];
+  }, [addClue, continueQueue, hydrated, queueLines, startNewGame, state, update]);
 
-  function chooseClueForLink(id: VallombreClueId) {
-    setSelectedClues((current) => {
-      if (current.includes(id)) return current.filter((clueId) => clueId !== id);
-      const next = [...current, id].slice(-2);
-      if (next.length === 2) {
-        commitState((currentState) => attemptVallombreLink(currentState, next[0], next[1]));
-        return [];
-      }
-      return next;
-    });
-  }
-
-  if (state.screen === 'title') {
-    return <TitleScreen hydrated={hydrated} onNewGame={newGame} onContinue={() => go('hub')} />;
-  }
+  const isPortrait = height > width;
 
   return (
-    <View style={styles.root}>
-      <Image source={backgrounds['bg-01']} style={styles.backdrop} contentFit="cover" />
-      <View style={styles.tint} />
-      <View style={styles.topBar}>
-        <View style={styles.brand}>
-          <Text style={styles.kicker}>Vallombre</Text>
-          <Text numberOfLines={2} style={styles.title}>
-            Les Cendres de Vallombre
-          </Text>
+    <View style={styles.screen}>
+      <StatusBar hidden />
+      <Image source={backgrounds[currentLine.bg ?? state.bg]} style={styles.appBackdrop} contentFit="cover" />
+      <View style={styles.appShade} />
+      <SafeAreaView style={styles.safe}>
+        {isPortrait ? <RotateGate /> : null}
+        <View style={styles.stageShell}>
+          <View style={styles.leftStage}>
+            <Image source={backgrounds[currentLine.bg ?? state.bg]} style={styles.sceneImage} contentFit="cover" />
+            <View style={styles.sceneShade} />
+            <TopBar state={state} onBack={() => router.back()} onNew={startNewGame} />
+            {currentLine.character ? <CharacterSprite id={currentLine.character} expression={currentLine.expression ?? 'neutre'} align={currentLine.align ?? 'center'} /> : null}
+            {state.phase === 'notebook' ? <NotebookOverlay state={state} /> : null}
+            {state.phase === 'corkboard' ? <CorkboardOverlay state={state} /> : null}
+            <DialogueBox line={currentLine} />
+          </View>
+          <ChoicePanel title={choiceTitle(state)} choices={choices} />
         </View>
-        <View style={styles.clock}>
-          <Text style={styles.clockLabel}>Phase</Text>
-          <Text style={styles.clockValue}>{phaseLabels[state.phase]}</Text>
-        </View>
-      </View>
-
-      {state.screen !== 'ending' && state.screen !== 'intro' ? (
-        <View style={styles.nav}>
-          <NavButton label="Hall" active={state.screen === 'hub'} onPress={() => go('hub')} />
-          <NavButton label="Carnet" active={state.screen === 'notebook'} onPress={() => go('notebook')} />
-          <NavButton label="Tableau" active={state.screen === 'corkboard'} onPress={() => go('corkboard')} />
-          <NavButton label="Accuser" active={state.screen === 'verdict'} disabled={!canAccuse} onPress={() => go('verdict')} />
-        </View>
-      ) : null}
-
-      {state.screen !== 'intro' ? (
-        <View style={styles.messagePanel}>
-          <Text style={styles.messageText}>{state.lastMessage}</Text>
-          <Text style={styles.saveText}>Sauvegarde automatique</Text>
-        </View>
-      ) : null}
-
-      {guidance && state.screen !== 'intro' && state.screen !== 'ending' ? (
-        <GuidancePanel state={state} guidance={guidance} onAction={runGuidanceAction} />
-      ) : null}
-
-      {state.screen === 'intro' && <IntroScreen step={state.introStep} onNext={advanceIntro} onSkip={skipIntro} />}
-      {state.screen === 'hub' && <HubScreen state={state} onLocation={openLocation} onCharacter={openCharacter} />}
-      {state.screen === 'location' && <LocationScreen state={state} sceneWidth={sceneWidth} sceneHeight={sceneHeight} onInspect={inspect} onBack={() => go('hub')} />}
-      {state.screen === 'dialogue' && <DialogueScreen state={state} onPresent={(characterId, topicId, clueId, suspicion, response) => commitState((current) => presentContradiction(current, characterId, topicId, clueId, suspicion, response))} onBack={() => go('hub')} />}
-      {state.screen === 'notebook' && <NotebookScreen state={state} discovered={discovered} tab={notebookTab} onTab={setNotebookTab} />}
-      {state.screen === 'corkboard' && <CorkboardScreen state={state} selectedClues={selectedClues} onSelect={chooseClueForLink} />}
-      {state.screen === 'verdict' && <VerdictScreen state={state} onChoice={(key, value) => commitState((current) => setVerdictChoice(current, key, value))} onResolve={() => commitState(resolveVallombreEnding)} />}
-      {state.screen === 'ending' && <EndingScreen state={state} onRestart={newGame} />}
+      </SafeAreaView>
     </View>
   );
 }
 
-function getVallombreGuidance(state: VallombreState): VallombreGuidance | null {
-  if (state.screen === 'title' || state.screen === 'intro' || state.screen === 'ending') {
-    return null;
+function initialBureauChoices(state: VallombreRenpyState, addClue: (id: VallombreClueId, lines: Line[], returnPhase: Phase) => void, queueLines: (lines: Line[], returnPhase: Phase, patch?: Partial<VallombreRenpyState>) => void): Choice[] {
+  const choices: Choice[] = [];
+  if (!hasClue(state, 'clu-01')) {
+    choices.push({ label: 'Examiner le foyer', onPress: () => addClue('clu-01', [{ bg: 'bg-04', speaker: 'Inspectrice Morane', text: 'Des cendres de papier, encore tièdes. On a brûlé des documents ici. Après le coup, peut-être.' }], 'initial-bureau') });
+  }
+  if (!hasClue(state, 'clu-04')) {
+    choices.push({ label: 'Examiner la fenêtre', onPress: () => addClue('clu-04', [{ bg: 'bg-04', speaker: 'Inspectrice Morane', text: "Fenêtre verrouillée, gel intact, pas une éraflure. Personne n'est entré par là." }], 'initial-bureau') });
+  }
+  if (!hasClue(state, 'clu-19')) {
+    choices.push({ label: "Examiner l'horloge", onPress: () => addClue('clu-19', [{ bg: 'bg-04', speaker: 'Inspectrice Morane', text: "L'horloge de cheminée s'est arrêtée. 23h47. Le choc a dû la renverser." }], 'initial-bureau') });
+  }
+  if (!hasClue(state, 'clu-03')) {
+    choices.push({
+      label: 'Fouiller le corps',
+      onPress: () =>
+        addClue(
+          'clu-03',
+          [
+            { bg: 'bg-04', speaker: 'Inspectrice Morane', text: 'La clé du bureau. Dans sa propre poche. La porte était donc verrouillée de l’intérieur.' },
+            { bg: 'bg-04', speaker: 'Inspectrice Morane', text: "Fenêtre scellée, clé sur lui… soit il s'est frappé seul, soit cette pièce a un secret." },
+          ],
+          'initial-bureau',
+        ),
+    });
   }
 
-  const has = (id: VallombreClueId) => state.discoveredClues.includes(id);
-  const linked = (id: (typeof requiredLinkIds)[number] | 'l5' | 'l6' | 'l7') => state.correctLinks.includes(id);
-  const missingOfficePrimer = officePrimerClues.filter((id) => !has(id));
+  const ready = ['clu-01', 'clu-03', 'clu-04', 'clu-19'].every((id) => hasClue(state, id as VallombreClueId));
+  choices.push({ label: 'Sortir et réunir les pensionnaires', disabled: !ready, hint: ready ? undefined : 'Le foyer, la fenêtre, l’horloge et le corps doivent être examinés.', onPress: () => queueLines(firstSuspectLines, 'hub', { bg: 'bg-hall' }) });
+  return choices;
+}
 
-  if (missingOfficePrimer.length > 0) {
+function hubChoices(state: VallombreRenpyState, update: (updater: (current: VallombreRenpyState) => VallombreRenpyState) => void, queueLines: (lines: Line[], returnPhase: Phase, patch?: Partial<VallombreRenpyState>) => void): Choice[] {
+  return [
+    { label: '🔍 Explorer un lieu', onPress: () => update((current) => ({ ...current, phase: 'locations', bg: 'bg-hall' })) },
+    { label: '💬 Interroger un suspect', onPress: () => update((current) => ({ ...current, phase: 'suspects', bg: 'bg-05' })) },
+    { label: "📓 Ouvrir le carnet d'indices", hint: `${state.clues.length}/20 indices`, onPress: () => update((current) => ({ ...current, phase: 'notebook', bg: 'bg-hall' })) },
+    { label: '🧵 Tableau de liège', hint: `${state.linkCount}/7 liens`, onPress: () => update((current) => ({ ...current, phase: 'corkboard', bg: 'bg-hall' })) },
+    {
+      label: '⚖ Réunir les suspects — Acte III',
+      disabled: !canAct3(state),
+      hint: canAct3(state) ? 'Confrontation finale disponible.' : 'Il faut passage, arme, acte de naissance, dîner et dernier verre.',
+      onPress: () => queueLines(act3Lines(state), 'recon3-q1', { bg: 'bg-09' }),
+    },
+  ];
+}
+
+function locationListChoices(update: (updater: (current: VallombreRenpyState) => VallombreRenpyState) => void): Choice[] {
+  return [
+    ['bureau', "Bureau d'Aldéric"],
+    ['biblio', 'Bibliothèque'],
+    ['salle', 'Salle à manger'],
+    ['salon', 'Salon'],
+    ['cuisine', 'Cuisine'],
+    ['serre', "Serre / jardin d'hiver"],
+    ['helene-room', "Chambre d'Hélène"],
+    ['victor-room', 'Chambre de Victor'],
+    ['grenier', 'Grenier'],
+    ['cave', 'Cave'],
+  ].map(([id, label]) => ({
+    label,
+    onPress: () => update((current) => ({ ...current, phase: 'location', currentLocation: id as LocationId, bg: locationMeta[id as LocationId].bg })),
+  })).concat([{ label: '↩ Retour', onPress: () => update((current) => ({ ...current, phase: 'hub', bg: 'bg-hall' })) }]);
+}
+
+function suspectListChoices(update: (updater: (current: VallombreRenpyState) => VallombreRenpyState) => void): Choice[] {
+  const choices: Choice[] = vallombreCharacters.map((character) => ({
+    label: characterNames[character.id],
+    hint: character.role,
+    onPress: () => update((current) => ({ ...current, phase: 'interrogation', currentSuspect: character.id, bg: 'bg-05' })),
+  }));
+  choices.push({ label: '↩ Retour', onPress: () => update((current) => ({ ...current, phase: 'hub', bg: 'bg-hall' })) });
+  return choices;
+}
+
+function locationChoices(
+  state: VallombreRenpyState,
+  addClue: (id: VallombreClueId, lines: Line[], returnPhase: Phase, patch?: Partial<VallombreRenpyState>) => void,
+  queueLines: (lines: Line[], returnPhase: Phase, patch?: Partial<VallombreRenpyState>) => void,
+  update: (updater: (current: VallombreRenpyState) => VallombreRenpyState) => void,
+): Choice[] {
+  const current = state.currentLocation;
+  const clue = (id: VallombreClueId, label: string, text: string, bg: BgKey = locationMeta[current].bg): Choice => ({
+    label,
+    onPress: () => addClue(id, [{ bg, speaker: 'Inspectrice Morane', text }], 'location'),
+  });
+  const choices: Choice[] = [];
+
+  if (current === 'bureau') {
+    if (!hasClue(state, 'clu-02')) choices.push(clue('clu-02', 'Le tisonnier', "Le tisonnier est propre. Trop propre — essuyé avec soin. Ce n'est pas l'arme ; on veut me le faire croire."));
+    if (!hasClue(state, 'clu-05')) choices.push(clue('clu-05', "Les murs (un courant d'air ?)", "Un filet d'air froid longe la bibliothèque mitoyenne. La pièce n'est pas aussi close qu'on le prétend."));
+    if (!hasClue(state, 'clu-09')) choices.push(clue('clu-09', 'Le foyer (papiers à demi brûlés)', "Une lettre à demi consumée. « …si vous ne payez pas, je révèlerai… ». Aldéric faisait chanter quelqu'un."));
+    if (!hasClue(state, 'clu-18')) choices.push(clue('clu-18', 'Sous le secrétaire', "Un flacon d'éther, roulé sous le meuble. Médical. Quelqu'un a nettoyé ici — après la mort."));
+  }
+
+  if (current === 'biblio') {
+    if (!hasClue(state, 'clu-06')) choices.push(clue('clu-06', "Pousser l'étagère décalée", "L'étagère pivote. Un passage. Il débouche droit dans le bureau d'Aldéric. Voilà ton « mystère de la chambre close ».", 'bg-11'));
+    if (!hasClue(state, 'clu-10')) choices.push(clue('clu-10', 'Examiner le sol poussiéreux', "Une empreinte de talon, nette, dans la poussière du passage. Quelqu'un est venu par ici cette nuit."));
+  }
+
+  if (current === 'salle') {
+    if (!hasClue(state, 'clu-08')) choices.push(clue('clu-08', "Compter les couverts d'argent", "Le service est complet… sauf le coupe-papier en argent. Disparu de la table. Voilà sans doute mon arme."));
+    if (!state.chronoDiner) choices.push({ label: 'Reconstituer le dîner', onPress: () => update((currentState) => ({ ...currentState, phase: 'recon1', bg: 'bg-06' })) });
+  }
+
+  if (current === 'salon') {
+    if (!hasClue(state, 'clu-15')) choices.push(clue('clu-15', 'La partition oubliée sur le piano', 'La partition de Camille. Dans la marge, au crayon, trois mots : « il sait ». Tremblés.'));
+    if (!hasClue(state, 'clu-20')) choices.push(clue('clu-20', 'Les deux verres de cognac', "Deux verres. Deux jeux d'empreintes. Aldéric a bu avec quelqu'un, peu avant de mourir."));
+    if (!state.chronoVerre) choices.push({ label: "Reconstituer le dernier verre d'Aldéric", onPress: () => update((currentState) => ({ ...currentState, phase: 'recon2', bg: 'bg-07' })) });
+  }
+
+  if (current === 'cuisine' && !hasClue(state, 'clu-13')) choices.push(clue('clu-13', 'Fouiller le bac à éther et chiffons', "Le coupe-papier manquant. Lavé à l'éther, mais le sang s'est logé dans la gravure. La vraie arme. Cachée par une main méthodique."));
+  if (current === 'serre' && !hasClue(state, 'clu-16')) choices.push(clue('clu-16', 'Relever la boue près de la porte', "Cette boue verte, caractéristique. La même que sur l'empreinte du passage. Le tueur est passé par le jardin d'hiver."));
+  if (current === 'helene-room' && !hasClue(state, 'clu-07')) choices.push(clue('clu-07', 'Ouvrir le tiroir à double-fond', 'Des reconnaissances de dette au nom de Théodore. Une fortune. Hélène les cachait — ou les gardait comme une arme.'));
+  if (current === 'victor-room') {
+    if (!hasClue(state, 'clu-12')) choices.push(clue('clu-12', 'Le télégramme glissé dans un livre', 'Un télégramme d’un créancier : « M. Vallombre nous a tout dit. » Aldéric allait livrer Théo à ses dettes.'));
+    if (!hasClue(state, 'clu-17')) choices.push(clue('clu-17', "Le médaillon sous l'oreiller", "Un médaillon. La photo d'un enfant. Et au dos, l'écriture appliquée de Sœur Garance."));
+  }
+  if (current === 'grenier' && !hasClue(state, 'clu-11')) choices.push(clue('clu-11', 'Forcer le coffre', "Un acte de naissance dissimulé. « Père : A. Vallombre. Mère : —— ». L'enfant caché de la maison. Et ce nom d'enfant… c'est celui de Victor."));
+  if (current === 'cave' && !hasClue(state, 'clu-14')) choices.push(clue('clu-14', 'Inspecter les bidons', "Un bidon de pétrole entamé, récemment. L'incendie n'était pas une improvisation. Il était préparé. Un acte à part."));
+
+  if (choices.length === 0) choices.push({ label: 'Pièce déjà épuisée', disabled: true, onPress: () => undefined });
+  choices.push({ label: '↩ Quitter la pièce', onPress: () => update((currentState) => ({ ...currentState, phase: 'hub', bg: 'bg-hall' })) });
+  return choices;
+}
+
+function interrogationChoices(state: VallombreRenpyState, queueLines: (lines: Line[], returnPhase: Phase, patch?: Partial<VallombreRenpyState>) => void, update: (updater: (current: VallombreRenpyState) => VallombreRenpyState) => void): Choice[] {
+  const id = state.currentSuspect;
+  const present = (key: string, needed: VallombreClueId, label: string, lines: Line[], suspicion: number): Choice => ({
+    label,
+    disabled: !hasClue(state, needed) || state.presented.includes(key),
+    hint: !hasClue(state, needed) ? `Indice requis : ${clueLabels[needed]}` : state.presented.includes(key) ? 'Déjà présenté' : undefined,
+    onPress: () =>
+      queueLines(lines, 'interrogation', {
+        presented: [...state.presented, key],
+        suspicion: { ...state.suspicion, [id]: state.suspicion[id] + suspicion },
+      }),
+  });
+
+  const c: Choice[] = [];
+  if (id === 'theodore') {
+    c.push(present('theo:telegram', 'clu-12', 'Présenter : Télégramme du créancier', [{ bg: 'bg-05', speaker: 'Théodore Vallombre', character: 'theodore', expression: 'effondre', text: 'Où… où avez-vous eu ça ?' }, { bg: 'bg-05', speaker: 'Inspectrice Morane', text: 'Votre père allait vous couper les vivres ET vous livrer à vos créanciers. Voilà un mobile splendide.' }, { bg: 'bg-05', speaker: 'Théodore Vallombre', character: 'theodore', expression: 'inquiet', text: 'Un mobile, oui ! Mais pas le cran. Je tremble en signant un chèque, regardez-moi.' }], 40));
+    c.push(present('theo:debt', 'clu-07', 'Présenter : Reconnaissances de dette', [{ bg: 'bg-05', speaker: 'Théodore Vallombre', character: 'theodore', expression: 'inquiet', text: 'Ces dettes… oui. Mais ma mère les gardait. Pour me tenir, pas pour me sauver.' }], 10));
+    c.push({ label: 'Le presser sur son emploi du temps', onPress: () => queueLines([{ bg: 'bg-05', speaker: 'Théodore Vallombre', character: 'theodore', expression: 'colere', text: "J'étais à la table de jeu jusqu'à minuit. Demandez à Camille, elle perdait avec moi." }], 'interrogation') });
+  }
+  if (id === 'foucher') {
+    c.push(present('foucher:ether', 'clu-18', "Présenter : Flacon d'éther", [{ bg: 'bg-05', speaker: 'Dr Lazare Foucher', character: 'foucher', expression: 'inquiet', text: '…' }, { bg: 'bg-05', speaker: 'Dr Lazare Foucher', character: 'foucher', expression: 'effondre', text: "Très bien. J'ai nettoyé. J'ai déplacé l'arme. J'ai arrangé la pièce. Mais je n'ai PAS tué Aldéric." }, { bg: 'bg-05', speaker: 'Inspectrice Morane', text: 'Vous maquillez une scène de crime et vous voudriez que je vous croie ?' }], 30));
+    c.push(present('foucher:knife', 'clu-13', "Présenter : Coupe-papier lavé à l'éther", [{ bg: 'bg-05', speaker: 'Dr Lazare Foucher', character: 'foucher', expression: 'inquiet', text: "Oui, c'est moi qui l'ai cachée. On me l'a… mise entre les mains après coup. Je n'ai fait que la faire disparaître." }], 10));
+    c.push(present('foucher:clock', 'clu-19', 'Présenter : Horloge à 23h47', [{ bg: 'bg-05', speaker: 'Dr Lazare Foucher', character: 'foucher', expression: 'neutre', text: "23h47 ? Je n'ai trouvé le corps qu'après minuit. Il était froid. Froid prend du temps." }, { bg: 'bg-05', speaker: 'Inspectrice Morane', text: "(S'il dit vrai, il est entré APRÈS le meurtre. L'incendiaire n'est pas le meurtrier.)" }], 10));
+  }
+  if (id === 'victor') {
+    c.push(present('victor:birth', 'clu-11', 'Présenter : Acte de naissance', [{ bg: 'bg-05', speaker: 'Victor Nguyen', character: 'victor', expression: 'effondre', text: '…Vous savez donc.' }, { bg: 'bg-05', speaker: 'Victor Nguyen', character: 'victor', expression: 'effondre', text: "Oui. Je suis son fils. Le fils qu'on cache dans la marge des registres. Il m'a engagé comme secrétaire." }], 40));
+    c.push(present('victor:medallion', 'clu-17', 'Présenter : Médaillon', [{ bg: 'bg-05', speaker: 'Victor Nguyen', character: 'victor', expression: 'inquiet', text: "C'est Sœur Garance qui m'a élevé. Loin d'ici. La seule à m'avoir traité comme un enfant et non comme une faute." }], 10));
+    c.push(present('victor:mud', 'clu-16', 'Présenter : Boue verte de la serre', [{ bg: 'bg-05', speaker: 'Victor Nguyen', character: 'victor', expression: 'colere', text: "La serre ? J'y vais souvent. C'est le seul endroit vivant de cette maison morte." }, { bg: 'bg-05', speaker: 'Inspectrice Morane', text: '(Il s’avance trop pour se justifier. La boue, le passage, le mobile… tout converge.)' }], 20));
+  }
+  if (id === 'helene') {
+    c.push(present('helene:debt', 'clu-07', 'Présenter : Reconnaissances de dette', [{ bg: 'bg-05', speaker: 'Hélène Vallombre', character: 'helene', expression: 'ment', text: 'Théo est faible. Je gardais ces papiers pour le protéger de lui-même.' }], 15));
+    c.push(present('helene:blackmail', 'clu-09', 'Présenter : Lettre de chantage', [{ bg: 'bg-05', speaker: 'Hélène Vallombre', character: 'helene', expression: 'effondre', text: "Mon mari faisait chanter la moitié de cette maison. Moi comprise. J'ai appris à vivre avec une araignée. Je n'ai pas appris à la tuer." }], 10));
+  }
+  if (id === 'camille') {
+    c.push(present('camille:score', 'clu-15', 'Présenter : Partition « il sait »', [{ bg: 'bg-05', speaker: 'Camille Roux', character: 'camille', expression: 'effondre', text: '« Il sait. » Oui. Aldéric savait, pour mon passé. Il me tenait par la gorge à chaque dîner.' }], 20));
+    c.push(present('camille:blackmail', 'clu-09', 'Présenter : Lettre de chantage', [{ bg: 'bg-05', speaker: 'Camille Roux', character: 'camille', expression: 'inquiet', text: "Une de plus à payer. Nous étions tous ses débiteurs. Aucun de nous n'était assez courageux. Sauf un, visiblement." }], 5));
+  }
+  if (id === 'garance') {
+    c.push(present('garance:knife', 'clu-13', 'Présenter : Coupe-papier trouvé dans SA cuisine', [{ bg: 'bg-05', speaker: 'Sœur Garance', character: 'garance', expression: 'inquiet', text: "…On l'a déposée chez moi. Je l'ai trouvée. Et Dieu me pardonne, je l'ai lavée. Pour protéger… quelqu'un." }, { bg: 'bg-05', speaker: 'Inspectrice Morane', text: "Vous protégez l'enfant que vous avez élevé. Victor." }, { bg: 'bg-05', speaker: 'Sœur Garance', character: 'garance', expression: 'effondre', text: "Je n'ai pas tenu la lame, inspectrice. Mais je n'ai pas voulu qu'on la retrouve dans sa main." }], 25));
+    c.push(present('garance:medallion', 'clu-17', 'Présenter : Médaillon', [{ bg: 'bg-05', speaker: 'Sœur Garance', character: 'garance', expression: 'effondre', text: "Oui. Je l'ai élevé. Pendant qu'Aldéric le rayait de sa vie. Cet enfant n'a connu de cette famille que sa cruauté." }], 10));
+  }
+
+  c.push({ label: '↩ Le laisser', onPress: () => update((current) => ({ ...current, phase: 'hub', bg: 'bg-hall' })) });
+  return c;
+}
+
+function corkboardChoices(state: VallombreRenpyState, queueLines: (lines: Line[], returnPhase: Phase, patch?: Partial<VallombreRenpyState>) => void, update: (updater: (current: VallombreRenpyState) => VallombreRenpyState) => void): Choice[] {
+  const choices: Choice[] = linkDefs.map((link) => {
+    const available = hasClue(state, link.first) && hasClue(state, link.second);
+    const done = hasLink(state, link.id);
     return {
-      title: 'Lire la scène de crime',
-      text: 'Commence par les preuves qui rendent le bureau impossible: feu, clé, fenêtre et heure du décès.',
-      reward: 'Tu comprendras pourquoi la pièce verrouillée ne peut pas être un simple suicide.',
-      action: { kind: 'location', id: 'loc-03', label: 'Fouiller le bureau' },
-      checklist: missingOfficePrimer.map((id) => findClue(id).title),
+      label: done ? `✓ ${link.label}` : link.label,
+      disabled: !available || done,
+      hint: !available ? `${clueLabels[link.first]} + ${clueLabels[link.second]}` : done ? 'Déjà relié' : undefined,
+      onPress: () =>
+        queueLines([{ bg: 'bg-hall', speaker: 'Tableau de liège', text: link.line }], 'corkboard', {
+          links: [...state.links, link.id],
+          linkCount: state.linkCount + 1,
+        }),
     };
-  }
+  });
+  choices.push({ label: '↩ Retour au hall', onPress: () => update((current) => ({ ...current, phase: 'hub', bg: 'bg-hall' })) });
+  return choices;
+}
 
-  if (!has('clu-05')) {
-    return {
-      title: 'Chercher ce qui contredit le huis clos',
-      text: 'La fenêtre et la clé ferment deux pistes. Il reste à trouver ce qui trahit une autre entrée.',
-      reward: 'Un nouvel accès logique apparaîtra vers la bibliothèque.',
-      action: { kind: 'location', id: 'loc-03', label: 'Inspecter le bureau' },
-      checklist: ['Trouver le courant d’air anormal'],
-    };
-  }
+function recon1Choices(queueLines: (lines: Line[], returnPhase: Phase, patch?: Partial<VallombreRenpyState>) => void): Choice[] {
+  return [
+    { label: 'Aldéric porte un toast', onPress: () => queueLines([{ bg: 'bg-06', speaker: 'Inspectrice Morane', text: "D'abord le toast. Puis Aldéric tend une lettre à Camille. Et alors seulement Victor se lève, livide." }, { bg: 'bg-06', speaker: 'Chronologie', text: 'Chronologie complétée : 20h–21h.' }], 'location', { chronoDiner: true, currentLocation: 'salle' }) },
+    { label: 'Victor quitte la table', onPress: () => queueLines([{ bg: 'bg-06', speaker: 'Inspectrice Morane', text: 'Non. Cet ordre contredit les témoignages. Reprenons.' }], 'recon1') },
+    { label: 'Camille reçoit une lettre', onPress: () => queueLines([{ bg: 'bg-06', speaker: 'Inspectrice Morane', text: 'Non. Cet ordre contredit les témoignages. Reprenons.' }], 'recon1') },
+  ];
+}
 
-  if (!has('clu-06')) {
-    return {
-      title: 'Suivre le courant d’air',
-      text: 'Le bureau indique une autre entrée. La bibliothèque est la pièce qui peut cacher un passage.',
-      reward: 'Avec deux indices compatibles, tu pourras établir ton premier fil rouge.',
-      action: { kind: 'location', id: 'loc-04', label: 'Aller à la bibliothèque' },
-      checklist: ['Inspecter l’étagère décalée'],
-    };
-  }
+function recon2Choices(queueLines: (lines: Line[], returnPhase: Phase, patch?: Partial<VallombreRenpyState>) => void): Choice[] {
+  return [
+    { label: 'Quelqu’un venu par la bibliothèque', onPress: () => queueLines([{ bg: 'bg-07', speaker: 'Inspectrice Morane', text: "Le second verre vient du passage. L'invité d'Aldéric est entré par la bibliothèque, sans frapper. Un familier." }, { bg: 'bg-07', speaker: 'Chronologie', text: 'Chronologie complétée : 23h00.' }], 'location', { chronoVerre: true, currentLocation: 'salon' }) },
+    { label: 'Personne, il buvait seul', onPress: () => queueLines([{ bg: 'bg-07', speaker: 'Inspectrice Morane', text: "Non. Les empreintes ne mentent pas, et l'éther du docteur date d'après minuit." }], 'recon2') },
+    { label: 'Le docteur Foucher', onPress: () => queueLines([{ bg: 'bg-07', speaker: 'Inspectrice Morane', text: "Non. Les empreintes ne mentent pas, et l'éther du docteur date d'après minuit." }], 'recon2') },
+  ];
+}
 
-  if (!linked('l1')) {
-    return {
-      title: 'Établir le premier lien',
-      text: 'Deux indices parlent du même phénomène. Relie-les sur le Tableau de Liège.',
-      reward: 'Le grenier et la cave se débloqueront, et l’enquête passera à la phase suivante.',
-      action: { kind: 'screen', screen: 'corkboard', label: 'Relier les indices' },
-      checklist: ['Courant d’air anormal', 'Étagère pivotante'],
-    };
-  }
+function recon3Q1Choices(queueLines: (lines: Line[], returnPhase: Phase) => void, update: (updater: (current: VallombreRenpyState) => VallombreRenpyState) => void): Choice[] {
+  return [
+    { label: 'Entrée par le passage de la bibliothèque', onPress: () => update((current) => ({ ...current, phase: 'recon3-q2', bg: 'bg-09' })) },
+    { label: 'Fuite par la fenêtre', onPress: () => queueLines([{ bg: 'bg-09', speaker: 'Inspectrice Morane', text: 'Non. La fenêtre est scellée, le tisonnier est un leurre. Reprenons depuis l’entrée.' }], 'recon3-q1') },
+    { label: 'Le tisonnier frappe', onPress: () => queueLines([{ bg: 'bg-09', speaker: 'Inspectrice Morane', text: 'Non. La fenêtre est scellée, le tisonnier est un leurre. Reprenons depuis l’entrée.' }], 'recon3-q1') },
+  ];
+}
 
-  if (!has('clu-20')) {
-    return {
-      title: 'Reconstituer la dernière heure',
-      text: 'L’horloge donne une heure. Il faut maintenant savoir si Aldéric était seul juste avant.',
-      reward: 'La chronologie de 23h commencera à tenir.',
-      action: { kind: 'location', id: 'loc-06', label: 'Fouiller le salon' },
-      checklist: ['Trouver le verre de cognac'],
-    };
-  }
+function recon3Q2Choices(queueLines: (lines: Line[], returnPhase: Phase) => void): Choice[] {
+  return [
+    { label: 'Une confrontation, des mots durs', onPress: () => queueLines([{ bg: 'bg-09', speaker: 'Inspectrice Morane', text: 'Entrée par le passage. Puis la confrontation.' }], 'recon3-q3') },
+    { label: 'Un vol silencieux', onPress: () => queueLines([{ bg: 'bg-09', speaker: 'Inspectrice Morane', text: 'Non. Ça ne colle pas. Reprenons.' }], 'recon3-q1') },
+  ];
+}
 
-  if (!linked('l2')) {
-    return {
-      title: 'Fixer la chronologie',
-      text: 'L’heure arrêtée et le dernier verre doivent être recoupés.',
-      reward: 'La soirée cessera d’être vague: le meurtre aura une fenêtre précise.',
-      action: { kind: 'screen', screen: 'corkboard', label: 'Relier la chronologie' },
-      checklist: ['Horloge 23h47', 'Verre de cognac'],
-    };
-  }
+function recon3Q3Choices(queueLines: (lines: Line[], returnPhase: Phase, patch?: Partial<VallombreRenpyState>) => void): Choice[] {
+  return [
+    { label: 'Fuite par le passage, boue verte au talon', onPress: () => queueLines([{ bg: 'bg-09', speaker: 'Inspectrice Morane', text: 'Entré par le passage, parti par le passage. Sans jamais toucher la porte ni la fenêtre.' }, { bg: 'bg-09', speaker: 'Chronologie', text: 'Chronologie complète. Reste un nom.' }], 'accuse-who', { chronoMeurtre: true }) },
+    { label: 'Sortie par la porte, verrouillée derrière', onPress: () => queueLines([{ bg: 'bg-09', speaker: 'Inspectrice Morane', text: 'Non. La clé était dans sa poche. Reprenons.' }], 'recon3-q1') },
+  ];
+}
 
-  if (!has('clu-13')) {
-    return {
-      title: 'Trouver la vraie arme',
-      text: 'Le tisonnier est trop propre. Cherche l’objet qui manque puis celui qui a été lavé.',
-      reward: 'Tu sépareras le meurtre de la mise en scène.',
-      action: { kind: 'location', id: 'loc-07', label: 'Fouiller la cuisine' },
-      checklist: ['Coupe-papier lavé'],
-    };
-  }
+function accuseWhoChoices(update: (updater: (current: VallombreRenpyState) => VallombreRenpyState) => void): Choice[] {
+  return vallombreCharacters.map((character) => ({
+    label: characterNames[character.id],
+    onPress: () => update((current) => ({ ...current, qui: character.id, phase: 'accuse-how' })),
+  }));
+}
 
-  if (!linked('l3')) {
-    return {
-      title: 'Identifier la scène maquillée',
-      text: 'L’éther et l’arme lavée ne disent pas forcément qui a tué. Ils disent qui a manipulé la scène.',
-      reward: 'Tu éviteras de confondre incendiaire, maquilleur et assassin.',
-      action: { kind: 'screen', screen: 'corkboard', label: 'Relier éther et arme' },
-      checklist: ['Coupe-papier lavé', 'Flacon d’éther'],
-    };
-  }
+function accuseHowChoices(state: VallombreRenpyState, update: (updater: (current: VallombreRenpyState) => VallombreRenpyState) => void): Choice[] {
+  return [
+    { label: "Le coupe-papier lavé à l'éther, et le passage (boue verte)", disabled: !(hasClue(state, 'clu-13') && hasClue(state, 'clu-16')), onPress: () => update((current) => ({ ...current, commentCorrect: true, phase: 'accuse-why' })) },
+    { label: 'Le tisonnier du foyer', onPress: () => update((current) => ({ ...current, commentCorrect: false, phase: 'accuse-why' })) },
+    { label: 'Le bidon de pétrole', onPress: () => update((current) => ({ ...current, commentCorrect: false, phase: 'accuse-why' })) },
+  ];
+}
 
-  if (!has('clu-10')) {
-    return {
-      title: 'Chercher la trace du passage',
-      text: 'Le passage existe. Il faut maintenant prouver que quelqu’un l’a utilisé cette nuit.',
-      reward: 'La fuite du tueur commencera à se dessiner.',
-      action: { kind: 'location', id: 'loc-04', label: 'Retour bibliothèque' },
-      checklist: ['Talon dans la poussière'],
-    };
-  }
+function accuseWhyChoices(state: VallombreRenpyState, update: (updater: (current: VallombreRenpyState) => VallombreRenpyState) => void): Choice[] {
+  return [
+    { label: "Pour l'héritage et l'argent", onPress: () => update((current) => resolveEnding({ ...current, pourquoiCorrect: false })) },
+    { label: 'Pour empêcher une humiliation publique — le secret de naissance', disabled: !hasClue(state, 'clu-11'), onPress: () => update((current) => resolveEnding({ ...current, pourquoiCorrect: true })) },
+    { label: 'Par jalousie amoureuse', onPress: () => update((current) => resolveEnding({ ...current, pourquoiCorrect: false })) },
+  ];
+}
 
-  if (!has('clu-16')) {
-    return {
-      title: 'Suivre la boue',
-      text: 'Une trace seule ne suffit pas. Il faut l’origine de cette matière.',
-      reward: 'Tu pourras prouver par où le tueur est reparti.',
-      action: { kind: 'location', id: 'loc-08', label: 'Aller à la serre' },
-      checklist: ['Boue verte'],
-    };
-  }
+function act3Lines(state: VallombreRenpyState): Line[] {
+  const lines: Line[] = [
+    { bg: 'bg-08', speaker: 'Inspectrice Morane', text: 'Cette nuit, deux crimes ont été commis dans cette pièce.' },
+    { bg: 'bg-08', speaker: 'Inspectrice Morane', text: 'Et pendant des heures, vous avez tous espéré que je les confonde.' },
+  ];
+  if (hasClue(state, 'clu-14') && hasClue(state, 'clu-18')) lines.push({ bg: 'bg-08', speaker: 'Inspectrice Morane', text: "Crime numéro deux : l'incendie. Foucher a trouvé le corps, paniqué, brûlé ses lettres et maquillé un suicide." });
+  if (hasClue(state, 'clu-08') && hasClue(state, 'clu-19')) lines.push({ bg: 'bg-08', speaker: 'Inspectrice Morane', text: "Crime numéro un : à 23h47, quelqu'un a frappé Aldéric à la tempe avec le coupe-papier en argent." });
+  if (hasClue(state, 'clu-06') && hasClue(state, 'clu-16')) lines.push({ bg: 'bg-08', speaker: 'Inspectrice Morane', text: 'Puis il est reparti par le passage de la bibliothèque, laissant de la boue verte sur son talon.' });
+  if (hasClue(state, 'clu-11')) lines.push({ bg: 'bg-08', speaker: 'Inspectrice Morane', text: "Le mobile n'était pas l'argent. C'était un secret de famille exhibé pour humilier." });
+  lines.push({ bg: 'bg-09', speaker: 'Inspectrice Morane', text: 'Reconstituons les sept dernières minutes. Ensuite, je nommerai la main.' });
+  return lines;
+}
 
-  if (!linked('l4')) {
-    return {
-      title: 'Fermer le trajet du tueur',
-      text: 'Relie la trace de bibliothèque à la terre de serre.',
-      reward: 'Les quatre déductions obligatoires seront établies: l’accusation devient défendable.',
-      action: { kind: 'screen', screen: 'corkboard', label: 'Relier la fuite' },
-      checklist: ['Talon dans la poussière', 'Boue verte'],
-    };
-  }
-
-  const contradiction = findAvailableContradiction(state);
-  if (contradiction) {
-    return {
-      title: 'Faire craquer un suspect',
-      text: 'Tu as une preuve qui contredit une déclaration. Présente-la pour transformer un indice en pression.',
-      reward: 'La jauge de suspicion montera et un mensonge deviendra exploitable.',
-      action: { kind: 'character', id: contradiction.characterId, label: `Interroger ${findCharacter(contradiction.characterId).name}` },
-      checklist: [contradiction.topicLabel, findClue(contradiction.clueId).title],
-    };
-  }
-
-  if (!has('clu-11')) {
-    return {
-      title: 'Chercher le mobile profond',
-      text: 'Tu peux accuser, mais la meilleure vérité demande le secret de naissance.',
-      reward: 'Le mobile de Victor deviendra compréhensible, pas seulement plausible.',
-      action: { kind: 'location', id: 'loc-11', label: 'Fouiller le grenier' },
-      checklist: ['Acte de naissance'],
-    };
-  }
-
-  if (!has('clu-17')) {
-    return {
-      title: 'Compléter le secret de famille',
-      text: 'L’acte de naissance donne un nom. Il faut encore comprendre qui a protégé l’enfant.',
-      reward: 'Garance cessera d’être une simple gouvernante dans l’histoire.',
-      action: { kind: 'location', id: 'loc-10', label: 'Fouiller la chambre de Victor' },
-      checklist: ['Médaillon'],
-    };
-  }
-
-  if (!linked('l5')) {
-    return {
-      title: 'Relier filiation et protection',
-      text: 'Ces deux preuves racontent le même secret vu de deux côtés.',
-      reward: 'Tu débloqueras une lecture plus complète du mobile.',
-      action: { kind: 'screen', screen: 'corkboard', label: 'Relier le secret familial' },
-      checklist: ['Acte de naissance', 'Médaillon'],
-    };
-  }
+function resolveEnding(state: VallombreRenpyState): VallombreRenpyState {
+  let endingId: VallombreRenpyState['endingId'];
+  if (state.qui === 'foucher' && !hasLink(state, 'l5') && !hasLink(state, 'l6')) endingId = 'end-e';
+  else if (state.qui !== 'victor') endingId = 'end-c';
+  else if (!state.commentCorrect) endingId = 'end-d';
+  else if (state.commentCorrect && state.pourquoiCorrect && state.linkCount >= 7) endingId = 'end-a';
+  else endingId = 'end-b';
 
   return {
-    title: 'Préparer l’accusation',
-    text: 'Les déductions nécessaires sont établies. Choisis qui a tué, comment, et pourquoi.',
-    reward: state.correctLinks.length >= 7 ? 'Tous les fils sont prêts pour la meilleure vérité.' : 'Tu peux finir maintenant ou chercher les liens optionnels restants.',
-    action: { kind: 'screen', screen: 'verdict', label: 'Rendre le verdict' },
-    checklist: ['Qui ?', 'Comment ?', 'Pourquoi ?'],
+    ...state,
+    endingId,
+    phase: 'ending',
+    bg: endingId === 'end-e' ? 'bg-08' : 'bg-09',
+    lastLine: endingLine(endingId),
   };
 }
 
-function findAvailableContradiction(state: VallombreState) {
-  for (const dialogue of vallombreDialogues) {
-    for (const topic of dialogue.topics) {
-      if (!topic.contradiction) {
-        continue;
-      }
-
-      const key = `${dialogue.characterId}:${topic.id}`;
-      if (state.discoveredClues.includes(topic.contradiction.clueId) && !state.presentedContradictions.includes(key)) {
-        return {
-          characterId: dialogue.characterId,
-          topicLabel: topic.label,
-          clueId: topic.contradiction.clueId,
-        };
-      }
-    }
-  }
-
-  return null;
+function endingLine(id: NonNullable<VallombreRenpyState['endingId']>): Line {
+  const lines: Record<NonNullable<VallombreRenpyState['endingId']>, Line> = {
+    'end-a': { bg: 'bg-09', speaker: 'FIN A — Les Cendres Froides', character: 'victor', expression: 'effondre', text: 'Victor avoue. Garance se dénonce pour le passage. Deux mains, un seul crime de cœur. La vérité, entière et glacée.' },
+    'end-b': { bg: 'bg-09', speaker: 'FIN B — Justice Aveugle', character: 'victor', expression: 'effondre', text: 'Le bon coupable. La mauvaise vérité. Justice est faite — à demi.' },
+    'end-c': { bg: 'bg-09', speaker: 'FIN C — Erreur Judiciaire', text: 'On emmène un innocent dans la neige. Et quelque part dans le manoir, la vraie main se referme, soulagée.' },
+    'end-d': { bg: 'bg-09', speaker: 'FIN D — La Vérité Mutilée', character: 'victor', expression: 'inquiet', text: 'Le bon homme, condamné sur une preuve bancale. La vérité ne tiendra pas.' },
+    'end-e': { bg: 'bg-08', speaker: 'FIN E — Le Silence des Notables', character: 'foucher', expression: 'effondre', text: 'Foucher porte le feu et le meurtre. Le nom de Vallombre est sauf. Le passage restera secret. L’enfant aussi.' },
+  };
+  return lines[id];
 }
 
-function TitleScreen({ hydrated, onNewGame, onContinue }: { hydrated: boolean; onNewGame: () => void; onContinue: () => void }) {
+function choiceTitle(state: VallombreRenpyState) {
+  if (state.queue) return 'Dialogue';
+  if (state.phase === 'title') return 'Menu principal';
+  if (state.phase === 'initial-bureau') return 'Bureau verrouillé';
+  if (state.phase === 'hub') return 'Grand Hall';
+  if (state.phase === 'locations') return 'Explorer';
+  if (state.phase === 'suspects') return 'Interroger';
+  if (state.phase === 'location') return locationMeta[state.currentLocation].title;
+  if (state.phase === 'interrogation') return characterNames[state.currentSuspect];
+  if (state.phase === 'notebook') return 'Carnet';
+  if (state.phase === 'corkboard') return 'Tableau de liège';
+  if (state.phase.startsWith('recon')) return 'Reconstitution';
+  if (state.phase.startsWith('accuse')) return 'Accusation';
+  return 'Fin';
+}
+
+function CharacterSprite({ id, expression, align }: { id: VallombreCharacterId; expression: Expression; align: 'left' | 'center' | 'right' }) {
+  return <Image source={characterAssets[id][expression]} style={[styles.character, align === 'left' && styles.characterLeft, align === 'right' && styles.characterRight]} contentFit="contain" />;
+}
+
+function TopBar({ state, onBack, onNew }: { state: VallombreRenpyState; onBack: () => void; onNew: () => void }) {
   return (
-    <View style={styles.titleRoot}>
-      <Image source={backgrounds['bg-01']} style={styles.titleImage} contentFit="cover" />
-      <View style={styles.titleShade} />
-      <View style={styles.titleCopy}>
-        <Text style={styles.titleKicker}>Hiver 1924</Text>
-        <Text numberOfLines={2} style={styles.titleLogo}>
-          Les Cendres de Vallombre
-        </Text>
-        <Text style={styles.titleLead}>Six suspects, une pièce verrouillée, une vérité brûlée dans le foyer.</Text>
-        <View style={styles.titleActions}>
-          <PrimaryButton label="Nouvelle enquête" onPress={onNewGame} />
-          <SecondaryButton label="Reprendre" disabled={!hydrated} onPress={onContinue} />
-        </View>
+    <View style={styles.topBar}>
+      <Pressable onPress={onBack} style={({ pressed }) => [styles.topButton, pressed && styles.pressed]}>
+        <Text style={styles.topButtonText}>Retour</Text>
+      </Pressable>
+      <View style={styles.titleBlock}>
+        <Text style={styles.kicker}>Les Cendres de Vallombre</Text>
+        <Text style={styles.subKicker}>Sauvegarde automatique • Paysage forcé • {state.clues.length}/20 indices • {state.linkCount}/7 liens</Text>
       </View>
+      <Pressable onPress={onNew} style={({ pressed }) => [styles.topButton, pressed && styles.pressed]}>
+        <Text style={styles.topButtonText}>Nouvelle enquête</Text>
+      </Pressable>
     </View>
   );
 }
 
-function IntroScreen({ step, onNext, onSkip }: { step: number; onNext: () => void; onSkip: () => void }) {
-  const safeStep = Math.max(0, Math.min(vallombreIntroScenes.length - 1, step));
-  const scene = vallombreIntroScenes[safeStep];
-  const isLast = safeStep === vallombreIntroScenes.length - 1;
-
+function DialogueBox({ line }: { line: Line }) {
   return (
-    <View style={styles.introRoot}>
-      <Image source={backgrounds[scene.image]} style={styles.introImage} contentFit="cover" />
-      <View style={styles.introShade} />
-      <View style={styles.introProgress}>
-        {vallombreIntroScenes.map((item, index) => (
-          <View key={item.id} style={[styles.introDot, index <= safeStep && styles.introDotActive]} />
-        ))}
-      </View>
-      <View style={styles.introPanel}>
-        <Text style={styles.introKicker}>Prologue</Text>
-        <Text style={styles.introTitle}>{scene.title}</Text>
-        <Text style={styles.introText}>{scene.text}</Text>
-        <View style={styles.introActions}>
-          <SecondaryButton label="Passer" onPress={onSkip} />
-          <PrimaryButton label={isLast ? 'Entrer dans le hall' : 'Continuer'} onPress={onNext} />
-        </View>
-      </View>
-    </View>
-  );
-}
-
-function GuidancePanel({ state, guidance, onAction }: { state: VallombreState; guidance: VallombreGuidance; onAction: () => void }) {
-  const requiredDone = requiredLinkIds.filter((id) => state.correctLinks.includes(id)).length;
-  const contradictionsDone = state.presentedContradictions.length;
-
-  return (
-    <View style={styles.guidancePanel}>
-      <View style={styles.guidanceHeader}>
-        <View style={styles.guidanceCopy}>
-          <Text style={styles.guidanceKicker}>Objectif actuel</Text>
-          <Text style={styles.guidanceTitle}>{guidance.title}</Text>
-        </View>
-      </View>
-      <Text style={styles.guidanceText}>{guidance.text}</Text>
-      <View style={styles.rewardBox}>
-        <Text style={styles.rewardLabel}>Pourquoi maintenant</Text>
-        <Text style={styles.rewardText}>{guidance.reward}</Text>
-      </View>
-      <View style={styles.checklistRow}>
-        {guidance.checklist.map((item) => (
-          <View key={item} style={styles.checkItem}>
-            <Text style={styles.checkText}>{item}</Text>
-          </View>
-        ))}
-      </View>
-      <View style={styles.progressGrid}>
-        <ProgressStat label="Indices" value={state.discoveredClues.length} total={20} />
-        <ProgressStat label="Liens clés" value={requiredDone} total={4} />
-        <ProgressStat label="Pressions" value={contradictionsDone} total={8} />
-      </View>
-      {guidance.action ? (
-        <View style={styles.guidanceActionRow}>
-          <PrimaryButton label={guidance.action.label} onPress={onAction} />
+    <View style={styles.dialogue}>
+      {line.speaker ? (
+        <View style={styles.namebox}>
+          <Text style={styles.nameText}>{line.speaker}</Text>
         </View>
       ) : null}
+      <Text style={styles.dialogueText}>{line.text}</Text>
     </View>
   );
 }
 
-function ProgressStat({ label, value, total }: { label: string; value: number; total: number }) {
-  const pct = Math.min(100, (value / total) * 100);
-
+function ChoicePanel({ title, choices }: { title: string; choices: Choice[] }) {
   return (
-    <View style={styles.progressStat}>
-      <View style={styles.progressStatHeader}>
-        <Text style={styles.progressLabel}>{label}</Text>
-        <Text style={styles.progressValue}>{value}/{total}</Text>
-      </View>
-      <View style={styles.progressTrack}>
-        <View style={[styles.progressFill, { width: `${pct}%` }]} />
-      </View>
-    </View>
-  );
-}
-
-function HubScreen({ state, onLocation, onCharacter }: { state: VallombreState; onLocation: (id: VallombreState['currentLocationId']) => void; onCharacter: (id: VallombreCharacterId) => void }) {
-  return (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Grand Hall</Text>
-      <Text style={styles.sectionText}>Choisis une pièce à fouiller ou un suspect à interroger. Les zones verrouillées s’ouvrent par déduction.</Text>
-      <DiscoveryManual />
-      <View style={styles.locationGrid}>
-        {vallombreLocations.map((location) => {
-          const unlocked = isLocationUnlocked(state, location.id);
-          const foundHere = state.discoveredClues.filter((clueId) => findClue(clueId).locationId === location.id).length;
-          return (
-            <Pressable key={location.id} disabled={!unlocked} onPress={() => onLocation(location.id)} style={({ pressed }) => [styles.locationCard, !unlocked && styles.lockedCard, pressed && styles.pressed]}>
-              <Image source={backgrounds[location.bg]} style={styles.locationThumb} contentFit="cover" />
-              <View style={styles.locationOverlay} />
-              <Text style={styles.cardTitle}>{location.title}</Text>
-              <Text style={styles.cardMeta}>{unlocked ? `${foundHere}/${location.hotspots.filter((hotspot) => hotspot.clueId).length} indices` : 'Verrouillé par le tableau'}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
-      <Text style={styles.sectionTitle}>Suspects</Text>
-      <View style={styles.suspectGrid}>
-        {vallombreCharacters.map((character) => (
-          <Pressable key={character.id} onPress={() => onCharacter(character.id)} style={({ pressed }) => [styles.suspectCard, pressed && styles.pressed]}>
-            <Image source={characterAssets[character.id].neutre} style={styles.suspectBust} contentFit="contain" />
-            <View style={styles.suspectCopy}>
-              <Text style={styles.cardTitle}>{character.name}</Text>
-              <Text style={styles.cardMeta}>{character.role}</Text>
-              <SuspicionMeter value={state.suspicion[character.id]} />
-            </View>
+    <View style={styles.choicePanel}>
+      <Text style={styles.choiceTitle}>{title}</Text>
+      <ScrollView contentContainerStyle={styles.choiceList}>
+        {choices.map((choice, index) => (
+          <Pressable key={`${choice.label}-${index}`} disabled={choice.disabled} onPress={choice.onPress} style={({ pressed }) => [styles.choiceButton, choice.disabled && styles.choiceDisabled, pressed && styles.pressed]}>
+            <Text style={[styles.choiceText, choice.disabled && styles.choiceTextDisabled]}>{choice.label}</Text>
+            {choice.hint ? <Text style={styles.choiceHint}>{choice.hint}</Text> : null}
           </Pressable>
         ))}
-      </View>
+      </ScrollView>
     </View>
   );
 }
 
-function DiscoveryManual() {
-  const concepts = [
-    {
-      title: 'Hall',
-      text: 'Point central. Reviens ici pour choisir une pièce, un suspect ou relancer ton enquête depuis la boussole.',
-    },
-    {
-      title: 'Carnet',
-      text: 'Inventaire vivant. Chaque indice trouvé y garde sa provenance, ce qu’il prouve et les profils concernés.',
-    },
-    {
-      title: 'Tableau',
-      text: 'Espace de déduction. Sélectionne deux indices liés pour créer un fil rouge et débloquer la suite.',
-    },
-    {
-      title: 'Interrogatoire',
-      text: 'Les suspects mentent sur un détail. Présente la bonne preuve quand le bouton apparaît.',
-    },
-  ];
-
+function NotebookOverlay({ state }: { state: VallombreRenpyState }) {
   return (
-    <View style={styles.manualPanel}>
-      <View style={styles.manualHeader}>
-        <Text style={styles.manualTitle}>Comment avancer</Text>
-        <Text style={styles.manualMeta}>Boucle courte</Text>
-      </View>
-      <Text style={styles.manualLead}>Observe une pièce, prends un indice, lis le carnet, puis relie ou présente cette preuve. Le jeu indique toujours le prochain fil utile sans donner directement la solution finale.</Text>
-      <View style={styles.manualGrid}>
-        {concepts.map((concept) => (
-          <View key={concept.title} style={styles.manualCard}>
-            <Text style={styles.manualCardTitle}>{concept.title}</Text>
-            <Text style={styles.manualCardText}>{concept.text}</Text>
-          </View>
-        ))}
-      </View>
-    </View>
-  );
-}
-
-function LocationScreen({ state, sceneWidth, sceneHeight, onInspect, onBack }: { state: VallombreState; sceneWidth: number; sceneHeight: number; onInspect: (id: string) => void; onBack: () => void }) {
-  const location = findLocation(state.currentLocationId);
-  const uninspected = location.hotspots.filter((hotspot) => !state.inspectedHotspots.includes(`${location.id}:${hotspot.id}`));
-
-  return (
-    <View style={styles.section}>
-      <View style={styles.rowHeader}>
-        <View>
-          <Text style={styles.sectionTitle}>{location.title}</Text>
-          <Text style={styles.sectionText}>{location.summary}</Text>
-        </View>
-        <SecondaryButton label="Retour" onPress={onBack} />
-      </View>
-      <View style={styles.roomGuide}>
-        <Text style={styles.roomGuideTitle}>{uninspected.length > 0 ? 'À examiner dans cette pièce' : 'Pièce entièrement inspectée'}</Text>
-        <Text style={styles.roomGuideText}>
-          {uninspected.length > 0
-            ? uninspected.map((hotspot) => hotspot.label).join(' · ')
-            : 'Reviens au hall, au carnet ou au tableau pour transformer ces indices en déductions.'}
-        </Text>
-      </View>
-      <View style={[styles.sceneFrame, { width: sceneWidth, height: sceneHeight }]}>
-        <Image source={backgrounds[location.bg]} style={styles.sceneImage} contentFit="cover" />
-        {location.hotspots.map((hotspot) => {
-          const inspected = state.inspectedHotspots.includes(`${location.id}:${hotspot.id}`);
+    <View style={styles.overlayPanel}>
+      <Text style={styles.overlayTitle}>— Carnet d’indices —</Text>
+      <ScrollView contentContainerStyle={styles.clueGrid}>
+        {vallombreClues.map((clue) => {
+          const owned = hasClue(state, clue.id);
           return (
-            <Pressable
-              key={hotspot.id}
-              accessibilityRole="button"
-              accessibilityLabel={hotspot.label}
-              onPress={() => onInspect(hotspot.id)}
-              style={({ pressed }) => [
-                styles.hotspot,
-                { left: `${hotspot.x}%`, top: `${hotspot.y}%` },
-                inspected && styles.hotspotInspected,
-                pressed && styles.pressed,
-              ]}>
-              <Image source={require('@/assets/game/vallombre/ui-hotspot.png')} style={styles.hotspotImage} contentFit="contain" />
-              <Text style={styles.hotspotLabel}>{hotspot.label}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
-      <View style={styles.clueStrip}>
-        {state.discoveredClues
-          .map(findClue)
-          .filter((clue) => clue.locationId === location.id)
-          .map((clue) => (
-            <MiniClue key={clue.id} id={clue.id} />
-          ))}
-      </View>
-    </View>
-  );
-}
-
-function DialogueScreen({ state, onPresent, onBack }: { state: VallombreState; onPresent: (characterId: VallombreCharacterId, topicId: string, clueId: VallombreClueId, suspicion: number, response: string) => void; onBack: () => void }) {
-  const character = findCharacter(state.currentCharacterId);
-  const dialogue = vallombreDialogues.find((item) => item.characterId === character.id);
-  const expression = state.suspicion[character.id] >= 70 ? 'demasque' : state.presentedContradictions.some((key) => key.startsWith(`${character.id}:`)) ? 'ment' : 'neutre';
-
-  return (
-    <View style={styles.dialogueLayout}>
-      <View style={styles.characterStage}>
-        <Image source={backgrounds['bg-05']} style={styles.characterBack} contentFit="cover" />
-        <Image source={characterAssets[character.id][expression]} style={styles.characterSprite} contentFit="contain" />
-      </View>
-      <View style={styles.dialoguePanel}>
-        <View style={styles.rowHeader}>
-          <View>
-            <Text style={styles.sectionTitle}>{character.name}</Text>
-            <Text style={styles.sectionText}>{character.role} · {character.secret}</Text>
-          </View>
-          <SecondaryButton label="Retour" onPress={onBack} />
-        </View>
-        <Text style={styles.statement}>{character.intro}</Text>
-        {dialogue?.topics.map((topic) => {
-          const contradiction = topic.contradiction;
-          const canPresent = contradiction ? state.discoveredClues.includes(contradiction.clueId) : false;
-          const done = state.presentedContradictions.includes(`${character.id}:${topic.id}`);
-          return (
-            <View key={topic.id} style={styles.topicCard}>
-              <Text style={styles.topicLabel}>{topic.label}</Text>
-              <Text style={styles.topicStatement}>{topic.statement}</Text>
-              {contradiction ? (
-                <Pressable
-                  disabled={!canPresent || done}
-                  onPress={() => onPresent(character.id, topic.id, contradiction.clueId, contradiction.suspicion, contradiction.response)}
-                  style={({ pressed }) => [styles.proofButton, (!canPresent || done) && styles.disabledButton, pressed && styles.pressed]}>
-                  <Text style={styles.proofText}>{done ? 'Contradiction établie' : canPresent ? `Présenter: ${findClue(contradiction.clueId).title}` : 'Indice manquant'}</Text>
-                </Pressable>
-              ) : null}
+            <View key={clue.id} style={[styles.clueCard, !owned && styles.clueCardLocked]}>
+              {owned ? <Image source={propAssets[clue.id]} style={styles.clueImage} contentFit="cover" /> : <View style={styles.cluePlaceholder} />}
+              <Text style={styles.clueText}>{owned ? `${clue.id.replace('clu-', '')}. ${clue.title}` : '???'}</Text>
             </View>
           );
         })}
-      </View>
+      </ScrollView>
     </View>
   );
 }
 
-function NotebookScreen({ state, discovered, tab, onTab }: { state: VallombreState; discovered: ReturnType<typeof findClue>[]; tab: 'indices' | 'profils' | 'chrono' | 'plan'; onTab: (tab: 'indices' | 'profils' | 'chrono' | 'plan') => void }) {
+function CorkboardOverlay({ state }: { state: VallombreRenpyState }) {
   return (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Carnet de Morane</Text>
-      <View style={styles.notebookHelp}>
-        <Text style={styles.notebookHelpTitle}>À quoi sert le carnet ?</Text>
-        <Text style={styles.notebookHelpText}>
-          Les indices ne sont jamais consommés. Utilise-les pour comprendre ce qu’ils prouvent, les présenter aux suspects, puis les relier sur le Tableau de Liège.
-        </Text>
-      </View>
-      <View style={styles.tabRow}>
-        {(['indices', 'profils', 'chrono', 'plan'] as const).map((item) => (
-          <NavButton key={item} label={item} active={tab === item} onPress={() => onTab(item)} />
-        ))}
-      </View>
-      {tab === 'indices' ? (
-        <View style={styles.clueGrid}>
-          {discovered.map((clue) => (
-            <View key={clue.id} style={styles.clueCard}>
-              <Image source={props[clue.id]} style={styles.clueImage} contentFit="cover" />
-              <Text style={styles.cardTitle}>{clue.title}</Text>
-              <Text style={styles.cardMeta}>{findLocation(clue.locationId).title}</Text>
-              <Text style={styles.cardText}>{clue.proves}</Text>
+    <View style={styles.overlayPanel}>
+      <Text style={styles.overlayTitle}>— Tableau de liège —</Text>
+      <ScrollView contentContainerStyle={styles.linkList}>
+        {vallombreLinks.map((link) => {
+          const done = hasLink(state, link.id);
+          const available = link.clueIds.every((id) => hasClue(state, id));
+          return (
+            <View key={link.id} style={[styles.linkCard, done && styles.linkDone, !available && styles.linkLocked]}>
+              <Text style={styles.linkTitle}>{done ? '✓ ' : ''}{link.title}</Text>
+              <Text style={styles.linkText}>{link.clueIds.map((id) => clueLabels[id]).join(' + ')}</Text>
+              <Text style={styles.linkText}>{available ? link.unlocks : 'Indices manquants'}</Text>
             </View>
-          ))}
-          {discovered.length === 0 ? <Text style={styles.emptyText}>Aucun indice découvert.</Text> : null}
-        </View>
-      ) : null}
-      {tab === 'profils' ? (
-        <View style={styles.profileList}>
-          {vallombreCharacters.map((character) => (
-            <View key={character.id} style={styles.profileRow}>
-              <Image source={characterAssets[character.id].inquiet} style={styles.profileFace} contentFit="contain" />
-              <View style={styles.profileCopy}>
-                <Text style={styles.cardTitle}>{character.name}</Text>
-                <Text style={styles.cardText}>{character.role}. {character.secret}</Text>
-                <SuspicionMeter value={state.suspicion[character.id]} />
-              </View>
-            </View>
-          ))}
-        </View>
-      ) : null}
-      {tab === 'chrono' ? <Timeline state={state} /> : null}
-      {tab === 'plan' ? <MapView state={state} /> : null}
+          );
+        })}
+      </ScrollView>
     </View>
   );
 }
 
-function CorkboardScreen({ state, selectedClues, onSelect }: { state: VallombreState; selectedClues: VallombreClueId[]; onSelect: (id: VallombreClueId) => void }) {
-  const discovered = state.discoveredClues.map(findClue);
+function RotateGate() {
   return (
-    <View style={styles.section}>
-      <Image source={require('@/assets/game/vallombre/ui-cork.png')} style={styles.panelTexture} contentFit="cover" />
-      <Text style={styles.sectionTitle}>Tableau de Liège</Text>
-      <Text style={styles.sectionText}>Choisis deux indices dans la banque compacte. Si le lien est juste, le fil rouge est ajouté et une nouvelle étape s’ouvre.</Text>
-      <View style={styles.corkSelectionBar}>
-        <Text style={styles.corkSelectionTitle}>Sélection active</Text>
-        <Text style={styles.corkSelectionText}>
-          {selectedClues.length > 0 ? selectedClues.map((id) => findClue(id).title).join(' ↔ ') : 'Aucun indice sélectionné'}
-        </Text>
-      </View>
-      <View style={styles.corkboardLayout}>
-        <View style={styles.corkClueBank}>
-          <Text style={styles.corkColumnTitle}>Indices découverts</Text>
-          <View style={styles.compactPinGrid}>
-            {discovered.map((clue) => (
-              <Pressable key={clue.id} onPress={() => onSelect(clue.id)} style={({ pressed }) => [styles.compactPinCard, selectedClues.includes(clue.id) && styles.compactPinSelected, pressed && styles.pressed]}>
-                <Image source={props[clue.id]} style={styles.compactPinImage} contentFit="cover" />
-                <View style={styles.compactPinCopy}>
-                  <Text numberOfLines={2} style={styles.compactPinTitle}>{clue.title}</Text>
-                  <Text numberOfLines={1} style={styles.compactPinMeta}>{findLocation(clue.locationId).title}</Text>
-                </View>
-              </Pressable>
-            ))}
-            {discovered.length === 0 ? <Text style={styles.emptyText}>Fouille le bureau pour épingler tes premiers indices.</Text> : null}
-          </View>
-        </View>
-
-        <View style={styles.corkLinksColumn}>
-          <Text style={styles.corkColumnTitle}>Fils rouges</Text>
-          <View style={styles.linksList}>
-            {vallombreLinks.map((link) => {
-              const established = state.correctLinks.includes(link.id);
-              const ready = link.clueIds.every((id) => state.discoveredClues.includes(id));
-              return (
-                <View key={link.id} style={[styles.linkRow, established && styles.linkRowDone, !ready && styles.linkRowMuted]}>
-                  <Text style={styles.linkTitle}>{established ? '✓ ' : ready ? '• ' : '○ '}{link.title}</Text>
-                  <Text style={styles.linkText}>{ready ? link.clueIds.map((id) => findClue(id).title).join(' ↔ ') : 'Indices encore manquants'}</Text>
-                </View>
-              );
-            })}
-          </View>
-        </View>
-      </View>
+    <View style={styles.rotateGate}>
+      <Text style={styles.rotateTitle}>Tourne le téléphone</Text>
+      <Text style={styles.rotateText}>Les Cendres de Vallombre se joue uniquement en paysage.</Text>
     </View>
-  );
-}
-
-function VerdictScreen({ state, onChoice, onResolve }: { state: VallombreState; onChoice: (key: 'who' | 'how' | 'why', value: VallombreCharacterId | VallombreClueId) => void; onResolve: () => void }) {
-  const discovered = state.discoveredClues.map(findClue);
-  return (
-    <View style={styles.section}>
-      <Image source={backgrounds['bg-08']} style={styles.verdictBack} contentFit="cover" />
-      <Text style={styles.sectionTitle}>Accusation</Text>
-      <Text style={styles.sectionText}>Nomme la main, l’arme et le mobile. Une accusation incomplète peut quand même produire une fin amère.</Text>
-      <Text style={styles.verdictLabel}>Qui ?</Text>
-      <View style={styles.choiceGrid}>
-        {vallombreCharacters.map((character) => (
-          <ChoiceButton key={character.id} label={character.name} active={state.verdict.who === character.id} onPress={() => onChoice('who', character.id)} />
-        ))}
-      </View>
-      <Text style={styles.verdictLabel}>Comment ?</Text>
-      <View style={styles.choiceGrid}>
-        {discovered.map((clue) => (
-          <ChoiceButton key={clue.id} label={clue.title} active={state.verdict.how === clue.id} onPress={() => onChoice('how', clue.id)} />
-        ))}
-      </View>
-      <Text style={styles.verdictLabel}>Pourquoi ?</Text>
-      <View style={styles.choiceGrid}>
-        {discovered.map((clue) => (
-          <ChoiceButton key={clue.id} label={clue.title} active={state.verdict.why === clue.id} onPress={() => onChoice('why', clue.id)} />
-        ))}
-      </View>
-      <PrimaryButton label={requiredLinksComplete(state) ? 'Rendre le verdict' : 'Rendre un verdict risqué'} disabled={!state.verdict.who || !state.verdict.how || !state.verdict.why} onPress={onResolve} />
-    </View>
-  );
-}
-
-function EndingScreen({ state, onRestart }: { state: VallombreState; onRestart: () => void }) {
-  const ending = findEnding(state.endingId ?? 'end-c');
-  return (
-    <View style={styles.ending}>
-      <Image source={backgrounds[ending.id === 'end-a' ? 'bg-09' : 'bg-08']} style={styles.endingBack} contentFit="cover" />
-      <View style={styles.endingPanel}>
-        <Text style={styles.titleKicker}>{ending.tone}</Text>
-        <Text style={styles.endingTitle}>{ending.title}</Text>
-        <Text style={styles.endingText}>{ending.text}</Text>
-        <Text style={styles.endingMeta}>{state.discoveredClues.length}/20 indices · {state.correctLinks.length}/7 liens établis</Text>
-        <PrimaryButton label="Recommencer l’enquête" onPress={onRestart} />
-      </View>
-    </View>
-  );
-}
-
-function Timeline({ state }: { state: VallombreState }) {
-  const rows = [
-    ['20h', 'Dîner: Aldéric menace ses proches.', state.discoveredClues.includes('clu-15')],
-    ['23h', 'Dernier verre: la chronologie se resserre.', state.correctLinks.includes('l2')],
-    ['23h47', 'Meurtre: entrée, coup, fuite par le passage.', state.correctLinks.includes('l4')],
-    ['00h30', 'Foucher maquille la scène et brûle ses lettres.', state.correctLinks.includes('l3')],
-  ] as const;
-  return (
-    <View style={styles.timeline}>
-      {rows.map(([time, text, unlocked]) => (
-        <View key={time} style={[styles.timelineRow, unlocked && styles.timelineUnlocked]}>
-          <Text style={styles.timelineTime}>{time}</Text>
-          <Text style={styles.timelineText}>{unlocked ? text : 'Segment encore incertain'}</Text>
-        </View>
-      ))}
-    </View>
-  );
-}
-
-function MapView({ state }: { state: VallombreState }) {
-  return (
-    <View style={styles.mapGrid}>
-      {vallombreLocations.map((location) => (
-        <View key={location.id} style={[styles.mapRoom, isLocationUnlocked(state, location.id) && styles.mapRoomOpen]}>
-          <Text style={styles.mapRoomText}>{location.title}</Text>
-        </View>
-      ))}
-    </View>
-  );
-}
-
-function MiniClue({ id }: { id: VallombreClueId }) {
-  const clue = findClue(id);
-  return (
-    <View style={styles.miniClue}>
-      <Image source={props[id]} style={styles.miniClueImage} contentFit="cover" />
-      <Text style={styles.miniClueText}>{clue.title}</Text>
-    </View>
-  );
-}
-
-function SuspicionMeter({ value }: { value: number }) {
-  return (
-    <View style={styles.meter}>
-      <View style={[styles.meterFill, { width: `${value}%` }]} />
-    </View>
-  );
-}
-
-function NavButton({ label, active, disabled, onPress }: { label: string; active?: boolean; disabled?: boolean; onPress: () => void }) {
-  return (
-    <Pressable disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.navButton, active && styles.navButtonActive, disabled && styles.disabledButton, pressed && styles.pressed]}>
-      <Text style={[styles.navText, active && styles.navTextActive]}>{label}</Text>
-    </Pressable>
-  );
-}
-
-function ChoiceButton({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
-  return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.choiceButton, active && styles.choiceButtonActive, pressed && styles.pressed]}>
-      <Text style={[styles.choiceText, active && styles.choiceTextActive]}>{label}</Text>
-    </Pressable>
-  );
-}
-
-function PrimaryButton({ label, disabled, onPress }: { label: string; disabled?: boolean; onPress: () => void }) {
-  return (
-    <Pressable disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.primaryButton, disabled && styles.disabledButton, pressed && styles.pressed]}>
-      <Text style={styles.primaryText}>{label}</Text>
-    </Pressable>
-  );
-}
-
-function SecondaryButton({ label, disabled, onPress }: { label: string; disabled?: boolean; onPress: () => void }) {
-  return (
-    <Pressable disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.secondaryButton, disabled && styles.disabledButton, pressed && styles.pressed]}>
-      <Text style={styles.secondaryText}>{label}</Text>
-    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { borderRadius: 8, overflow: 'hidden', backgroundColor: '#141217', borderWidth: 2, borderColor: '#6E4B2F', padding: 14, gap: 12 },
-  backdrop: { ...StyleSheet.absoluteFill },
-  tint: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(8, 10, 14, 0.76)' },
-  topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 },
-  brand: { flex: 1, minWidth: 0 },
-  kicker: { color: '#D99B5C', fontSize: 12, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0 },
-  title: { color: '#F4E6C8', fontSize: 22, fontWeight: '900', letterSpacing: 0, lineHeight: 25 },
-  clock: { borderWidth: 1, borderColor: '#B9824B', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: 'rgba(24, 20, 20, 0.78)' },
-  clockLabel: { color: '#AEBECB', fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
-  clockValue: { color: '#F4E6C8', fontSize: 14, fontWeight: '900' },
-  nav: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  navButton: { minHeight: 38, borderRadius: 8, borderWidth: 1, borderColor: '#826145', backgroundColor: 'rgba(20, 22, 28, 0.82)', paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
-  navButtonActive: { backgroundColor: '#C98036', borderColor: '#F2BE7D' },
-  navText: { color: '#E6D3B5', fontSize: 13, fontWeight: '900', textTransform: 'uppercase' },
-  navTextActive: { color: '#11131A' },
-  messagePanel: { borderRadius: 8, borderWidth: 1, borderColor: '#614B3B', backgroundColor: 'rgba(22, 21, 23, 0.88)', padding: 12, gap: 4 },
-  messageText: { color: '#F0DFC2', fontSize: 15, fontWeight: '700', lineHeight: 21 },
-  saveText: { color: '#8FA9B8', fontSize: 12, fontWeight: '800', textTransform: 'uppercase' },
-  guidancePanel: { borderRadius: 8, borderWidth: 1, borderColor: '#9B7049', backgroundColor: 'rgba(18, 20, 26, 0.94)', padding: 12, gap: 10 },
-  guidanceHeader: { gap: 3 },
-  guidanceCopy: { flex: 1, minWidth: 0, gap: 3 },
-  guidanceKicker: { color: '#D99B5C', fontSize: 12, fontWeight: '900', textTransform: 'uppercase' },
-  guidanceTitle: { color: '#F7E4C3', fontSize: 20, fontWeight: '900', letterSpacing: 0 },
-  guidanceText: { color: '#D6E1E3', fontSize: 14, lineHeight: 20, fontWeight: '700' },
-  rewardBox: { borderRadius: 8, borderWidth: 1, borderColor: '#584638', backgroundColor: 'rgba(42, 33, 29, 0.92)', padding: 10, gap: 3 },
-  rewardLabel: { color: '#E59A4B', fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
-  rewardText: { color: '#F0DFC2', fontSize: 13, lineHeight: 18, fontWeight: '800' },
-  checklistRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
-  checkItem: { borderRadius: 999, borderWidth: 1, borderColor: '#7A6048', backgroundColor: 'rgba(34, 35, 39, 0.92)', paddingHorizontal: 10, paddingVertical: 6 },
-  checkText: { color: '#E9D9BD', fontSize: 12, fontWeight: '900' },
-  progressGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  progressStat: { flex: 1, minWidth: 142, gap: 5 },
-  progressStatHeader: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
-  progressLabel: { color: '#AEBECB', fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
-  progressValue: { color: '#F2D6A9', fontSize: 11, fontWeight: '900' },
-  progressTrack: { height: 7, borderRadius: 4, backgroundColor: '#26323A', overflow: 'hidden' },
-  progressFill: { height: '100%', backgroundColor: '#D28A3B' },
-  guidanceActionRow: { alignItems: 'flex-start' },
-  titleRoot: { minHeight: 560, borderRadius: 8, overflow: 'hidden', backgroundColor: '#12151C', borderWidth: 2, borderColor: '#6E4B2F', justifyContent: 'flex-end' },
-  titleImage: { ...StyleSheet.absoluteFill },
-  titleShade: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(7, 10, 15, 0.46)' },
-  titleCopy: { padding: 20, gap: 12, maxWidth: 620 },
-  titleKicker: { color: '#E69A4A', fontSize: 14, fontWeight: '900', textTransform: 'uppercase' },
-  titleLogo: { color: '#F8E4BD', fontSize: 33, lineHeight: 37, fontWeight: '900', letterSpacing: 0 },
-  titleLead: { color: '#D7E1E6', fontSize: 17, lineHeight: 24, fontWeight: '700' },
-  titleActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  introRoot: { minHeight: 540, borderRadius: 8, overflow: 'hidden', borderWidth: 1, borderColor: '#6E4B2F', backgroundColor: '#101218', justifyContent: 'flex-end' },
-  introImage: { ...StyleSheet.absoluteFill },
-  introShade: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(6, 8, 12, 0.28)' },
-  introProgress: { position: 'absolute', top: 14, right: 14, flexDirection: 'row', gap: 7 },
-  introDot: { width: 28, height: 6, borderRadius: 3, backgroundColor: 'rgba(230, 220, 196, 0.34)', borderWidth: 1, borderColor: 'rgba(255, 238, 198, 0.35)' },
-  introDotActive: { backgroundColor: '#D28A3B', borderColor: '#F2BE7D' },
-  introPanel: { margin: 14, borderRadius: 8, borderWidth: 1, borderColor: '#9B7049', backgroundColor: 'rgba(9, 11, 16, 0.84)', padding: 16, gap: 8 },
-  introKicker: { color: '#E69A4A', fontSize: 13, fontWeight: '900', textTransform: 'uppercase' },
-  introTitle: { color: '#F8E4BD', fontSize: 31, fontWeight: '900', letterSpacing: 0 },
-  introText: { color: '#E5EEF0', fontSize: 16, lineHeight: 23, fontWeight: '800' },
-  introActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'flex-end', marginTop: 4 },
-  section: { borderRadius: 8, borderWidth: 1, borderColor: '#5D4939', backgroundColor: 'rgba(18, 19, 23, 0.9)', padding: 14, gap: 12, overflow: 'hidden' },
-  sectionTitle: { color: '#F6E6C8', fontSize: 23, fontWeight: '900', letterSpacing: 0 },
-  sectionText: { color: '#C4D0D4', fontSize: 14, lineHeight: 20, fontWeight: '700' },
-  manualPanel: { borderRadius: 8, borderWidth: 1, borderColor: '#6D5746', backgroundColor: 'rgba(24, 25, 30, 0.92)', padding: 12, gap: 9 },
-  manualHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
-  manualTitle: { color: '#F6E6C8', fontSize: 18, fontWeight: '900' },
-  manualMeta: { color: '#101217', backgroundColor: '#D28A3B', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 4, fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
-  manualLead: { color: '#DCE5E6', fontSize: 13, lineHeight: 19, fontWeight: '700' },
-  manualGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  manualCard: { flex: 1, minWidth: 160, borderRadius: 8, borderWidth: 1, borderColor: '#4F4037', backgroundColor: 'rgba(37, 35, 37, 0.9)', padding: 9, gap: 5 },
-  manualCardTitle: { color: '#E59A4B', fontSize: 12, fontWeight: '900', textTransform: 'uppercase' },
-  manualCardText: { color: '#D4DEE0', fontSize: 12, lineHeight: 17, fontWeight: '700' },
-  rowHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 },
-  locationGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  locationCard: { width: '48%', minWidth: 250, height: 132, borderRadius: 8, overflow: 'hidden', borderWidth: 1, borderColor: '#7A6048', padding: 10, justifyContent: 'flex-end' },
-  lockedCard: { opacity: 0.48 },
-  locationThumb: { ...StyleSheet.absoluteFill },
-  locationOverlay: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0, 0, 0, 0.42)' },
-  cardTitle: { color: '#F5E7CB', fontSize: 16, fontWeight: '900' },
-  cardMeta: { color: '#B8CBD2', fontSize: 12, fontWeight: '800', lineHeight: 17 },
-  cardText: { color: '#C9D4D5', fontSize: 13, lineHeight: 18, fontWeight: '700' },
-  suspectGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  suspectCard: { width: '48%', minWidth: 250, minHeight: 118, borderRadius: 8, borderWidth: 1, borderColor: '#604B3C', backgroundColor: 'rgba(31, 30, 34, 0.9)', flexDirection: 'row', alignItems: 'center', padding: 8, gap: 10 },
-  suspectBust: { width: 82, height: 102 },
-  suspectCopy: { flex: 1, gap: 5, minWidth: 0 },
-  meter: { height: 8, borderRadius: 4, backgroundColor: '#28333B', overflow: 'hidden' },
-  meterFill: { height: '100%', backgroundColor: '#D85D3B' },
-  sceneFrame: { maxWidth: '100%', borderRadius: 8, overflow: 'hidden', borderWidth: 2, borderColor: '#8A6545', alignSelf: 'center', backgroundColor: '#111' },
-  roomGuide: { borderRadius: 8, borderWidth: 1, borderColor: '#5E4938', backgroundColor: 'rgba(30, 31, 35, 0.9)', padding: 10, gap: 3 },
-  roomGuideTitle: { color: '#E59A4B', fontSize: 12, fontWeight: '900', textTransform: 'uppercase' },
-  roomGuideText: { color: '#D8E2E4', fontSize: 13, lineHeight: 18, fontWeight: '800' },
+  screen: { flex: 1, backgroundColor: '#090A0E' },
+  appBackdrop: { ...StyleSheet.absoluteFill },
+  appShade: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(6, 8, 12, 0.78)' },
+  safe: { flex: 1, padding: 10 },
+  stageShell: { flex: 1, flexDirection: 'row', gap: 10 },
+  leftStage: { flex: 1, borderRadius: 8, overflow: 'hidden', borderWidth: 1, borderColor: '#B48A58', backgroundColor: '#111319' },
   sceneImage: { ...StyleSheet.absoluteFill },
-  hotspot: { position: 'absolute', width: 94, minHeight: 58, marginLeft: -47, marginTop: -29, alignItems: 'center', justifyContent: 'center' },
-  hotspotInspected: { opacity: 0.58 },
-  hotspotImage: { position: 'absolute', width: 58, height: 58 },
-  hotspotLabel: { color: '#FFF4D7', fontSize: 11, fontWeight: '900', textAlign: 'center', textShadowColor: '#000', textShadowRadius: 5, marginTop: 48 },
-  clueStrip: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  miniClue: { flexDirection: 'row', alignItems: 'center', gap: 7, borderRadius: 8, borderWidth: 1, borderColor: '#6D5746', backgroundColor: 'rgba(39, 36, 35, 0.9)', padding: 6 },
-  miniClueImage: { width: 34, height: 34, borderRadius: 6 },
-  miniClueText: { color: '#F3E0C0', fontSize: 12, fontWeight: '900' },
-  dialogueLayout: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  characterStage: { flex: 1, minWidth: 260, minHeight: 430, borderRadius: 8, overflow: 'hidden', borderWidth: 1, borderColor: '#654B38', backgroundColor: '#171A20' },
-  characterBack: { ...StyleSheet.absoluteFill, opacity: 0.7 },
-  characterSprite: { position: 'absolute', width: '96%', height: '96%', bottom: -18, left: '2%' },
-  dialoguePanel: { flex: 1.25, minWidth: 300, borderRadius: 8, borderWidth: 1, borderColor: '#604B3C', backgroundColor: 'rgba(18, 19, 23, 0.92)', padding: 14, gap: 10 },
-  statement: { color: '#F1E1C3', fontSize: 16, lineHeight: 22, fontWeight: '800' },
-  topicCard: { borderRadius: 8, borderWidth: 1, borderColor: '#514234', backgroundColor: 'rgba(37, 35, 37, 0.9)', padding: 10, gap: 8 },
-  topicLabel: { color: '#E39A51', fontSize: 13, fontWeight: '900', textTransform: 'uppercase' },
-  topicStatement: { color: '#DCE5E6', fontSize: 14, lineHeight: 20, fontWeight: '700' },
-  proofButton: { borderRadius: 8, backgroundColor: '#C98036', paddingVertical: 9, paddingHorizontal: 10, alignItems: 'center' },
-  proofText: { color: '#11131A', fontSize: 13, fontWeight: '900' },
-  notebookHelp: { borderRadius: 8, borderWidth: 1, borderColor: '#6D5746', backgroundColor: 'rgba(35, 31, 31, 0.92)', padding: 10, gap: 4 },
-  notebookHelpTitle: { color: '#E59A4B', fontSize: 12, fontWeight: '900', textTransform: 'uppercase' },
-  notebookHelpText: { color: '#DCE5E6', fontSize: 13, lineHeight: 18, fontWeight: '700' },
-  tabRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  clueGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  clueCard: { width: '31.5%', minWidth: 174, borderRadius: 8, borderWidth: 1, borderColor: '#604B3C', backgroundColor: 'rgba(31, 30, 34, 0.92)', padding: 9, gap: 7 },
-  clueImage: { width: '100%', aspectRatio: 1, borderRadius: 8, borderWidth: 1, borderColor: '#8A6545' },
-  emptyText: { color: '#C8D2D4', fontSize: 14, fontWeight: '800' },
-  profileList: { gap: 10 },
-  profileRow: { flexDirection: 'row', gap: 10, borderRadius: 8, borderWidth: 1, borderColor: '#584638', backgroundColor: 'rgba(28, 28, 32, 0.92)', padding: 10 },
-  profileFace: { width: 72, height: 90 },
-  profileCopy: { flex: 1, gap: 6 },
-  timeline: { gap: 8 },
-  timelineRow: { borderRadius: 8, borderWidth: 1, borderColor: '#4D4240', backgroundColor: 'rgba(31, 30, 34, 0.92)', padding: 10, flexDirection: 'row', gap: 10 },
-  timelineUnlocked: { borderColor: '#B9824B', backgroundColor: 'rgba(54, 40, 32, 0.95)' },
-  timelineTime: { color: '#E59A4B', fontSize: 15, fontWeight: '900', width: 56 },
-  timelineText: { color: '#D7E2E4', fontSize: 14, fontWeight: '800', flex: 1 },
-  mapGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  mapRoom: { width: '31%', minWidth: 145, minHeight: 62, borderRadius: 8, borderWidth: 1, borderColor: '#4E4140', backgroundColor: '#20242A', alignItems: 'center', justifyContent: 'center', padding: 8 },
-  mapRoomOpen: { backgroundColor: '#583B2E', borderColor: '#C98036' },
-  mapRoomText: { color: '#EAD9BC', fontSize: 12, fontWeight: '900', textAlign: 'center' },
-  panelTexture: { ...StyleSheet.absoluteFill, opacity: 0.2 },
-  corkSelectionBar: { borderRadius: 8, borderWidth: 1, borderColor: '#7A6048', backgroundColor: 'rgba(31, 24, 20, 0.92)', padding: 10, gap: 3 },
-  corkSelectionTitle: { color: '#E59A4B', fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
-  corkSelectionText: { color: '#F0DFC2', fontSize: 13, lineHeight: 18, fontWeight: '800' },
-  corkboardLayout: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  corkClueBank: { flex: 1.25, minWidth: 300, gap: 8 },
-  corkLinksColumn: { flex: 0.9, minWidth: 260, gap: 8 },
-  corkColumnTitle: { color: '#F2D6A9', fontSize: 14, fontWeight: '900', textTransform: 'uppercase' },
-  compactPinGrid: { gap: 7 },
-  compactPinCard: { minHeight: 64, borderRadius: 8, borderWidth: 1, borderColor: '#6A4A31', backgroundColor: 'rgba(38, 28, 22, 0.9)', padding: 7, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  compactPinSelected: { borderColor: '#F2BE7D', backgroundColor: 'rgba(132, 72, 38, 0.96)' },
-  compactPinImage: { width: 48, height: 48, borderRadius: 6, borderWidth: 1, borderColor: '#8A6545' },
-  compactPinCopy: { flex: 1, minWidth: 0, gap: 2 },
-  compactPinTitle: { color: '#F6E4C4', fontSize: 12, lineHeight: 16, fontWeight: '900' },
-  compactPinMeta: { color: '#BFD0D2', fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
-  linksList: { gap: 8 },
-  linkRow: { borderRadius: 8, borderWidth: 1, borderColor: '#4F4037', padding: 10, backgroundColor: 'rgba(24, 23, 26, 0.9)' },
-  linkRowDone: { borderColor: '#C98036', backgroundColor: 'rgba(55, 39, 31, 0.94)' },
-  linkRowMuted: { opacity: 0.56 },
-  linkTitle: { color: '#F2D6A9', fontSize: 14, fontWeight: '900' },
-  linkText: { color: '#BFD0D2', fontSize: 12, fontWeight: '700', lineHeight: 17 },
-  verdictBack: { ...StyleSheet.absoluteFill, opacity: 0.28 },
-  verdictLabel: { color: '#E59A4B', fontSize: 15, fontWeight: '900', textTransform: 'uppercase' },
-  choiceGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  choiceButton: { borderRadius: 8, borderWidth: 1, borderColor: '#5B4A3B', backgroundColor: 'rgba(27, 28, 32, 0.92)', paddingHorizontal: 10, paddingVertical: 8 },
-  choiceButtonActive: { borderColor: '#F2BE7D', backgroundColor: '#C98036' },
-  choiceText: { color: '#E9D9BD', fontSize: 13, fontWeight: '900' },
-  choiceTextActive: { color: '#11131A' },
-  ending: { minHeight: 520, borderRadius: 8, overflow: 'hidden', justifyContent: 'flex-end', borderWidth: 1, borderColor: '#6E4B2F' },
-  endingBack: { ...StyleSheet.absoluteFill },
-  endingPanel: { backgroundColor: 'rgba(9, 11, 15, 0.84)', padding: 18, gap: 10 },
-  endingTitle: { color: '#F7D69C', fontSize: 32, fontWeight: '900', letterSpacing: 0 },
-  endingText: { color: '#E4EEF0', fontSize: 16, lineHeight: 24, fontWeight: '700' },
-  endingMeta: { color: '#AFC1C8', fontSize: 13, fontWeight: '900', textTransform: 'uppercase' },
-  primaryButton: { minHeight: 44, borderRadius: 8, backgroundColor: '#D28A3B', borderWidth: 1, borderColor: '#F0C488', paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center' },
-  primaryText: { color: '#101217', fontSize: 14, fontWeight: '900', textTransform: 'uppercase' },
-  secondaryButton: { minHeight: 40, borderRadius: 8, backgroundColor: 'rgba(17, 19, 24, 0.86)', borderWidth: 1, borderColor: '#8B6A4F', paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
-  secondaryText: { color: '#F0DFC2', fontSize: 13, fontWeight: '900', textTransform: 'uppercase' },
-  disabledButton: { opacity: 0.45 },
+  sceneShade: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(3, 5, 8, 0.18)' },
+  topBar: { position: 'absolute', top: 10, left: 10, right: 10, zIndex: 5, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  topButton: { minHeight: 38, borderRadius: 8, borderWidth: 1, borderColor: '#D7B178', backgroundColor: 'rgba(14, 17, 23, 0.82)', paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
+  topButtonText: { color: '#F5E4BE', fontSize: 13, fontWeight: '900' },
+  titleBlock: { flex: 1, minWidth: 0, borderRadius: 8, backgroundColor: 'rgba(7, 9, 13, 0.68)', paddingHorizontal: 12, paddingVertical: 7 },
+  kicker: { color: '#F5D99F', fontSize: 18, fontWeight: '900' },
+  subKicker: { color: '#BFD0D4', fontSize: 11, fontWeight: '800', marginTop: 2 },
+  character: { position: 'absolute', zIndex: 2, bottom: 18, alignSelf: 'center', width: '62%', height: '88%' },
+  characterLeft: { left: '5%', alignSelf: 'auto' },
+  characterRight: { right: '5%', alignSelf: 'auto' },
+  dialogue: { position: 'absolute', left: 18, right: 18, bottom: 18, zIndex: 6, minHeight: 120, borderRadius: 8, borderWidth: 1, borderColor: '#D7B178', backgroundColor: 'rgba(8, 10, 15, 0.9)', padding: 16, justifyContent: 'center' },
+  namebox: { position: 'absolute', left: 18, top: -22, minHeight: 34, borderRadius: 7, borderWidth: 1, borderColor: '#D7B178', backgroundColor: '#151820', paddingHorizontal: 14, justifyContent: 'center' },
+  nameText: { color: '#E8C98A', fontSize: 14, fontWeight: '900' },
+  dialogueText: { color: '#F3E6CC', fontSize: 20, lineHeight: 28, fontWeight: '800' },
+  choicePanel: { width: 330, borderRadius: 8, borderWidth: 1, borderColor: '#B48A58', backgroundColor: 'rgba(10, 12, 17, 0.94)', padding: 12 },
+  choiceTitle: { color: '#E8C98A', fontSize: 19, fontWeight: '900', marginBottom: 10 },
+  choiceList: { gap: 8, paddingBottom: 8 },
+  choiceButton: { minHeight: 48, borderRadius: 8, borderWidth: 1, borderColor: '#6F563B', backgroundColor: 'rgba(32, 35, 43, 0.94)', paddingHorizontal: 11, paddingVertical: 9, justifyContent: 'center' },
+  choiceDisabled: { opacity: 0.42 },
+  choiceText: { color: '#F0DEC0', fontSize: 14, lineHeight: 18, fontWeight: '900' },
+  choiceTextDisabled: { color: '#9BA3A8' },
+  choiceHint: { color: '#95A9B0', fontSize: 11, lineHeight: 15, fontWeight: '800', marginTop: 4 },
   pressed: { opacity: 0.72, transform: [{ scale: 0.99 }] },
+  overlayPanel: { position: 'absolute', left: 18, right: 18, top: 70, bottom: 160, zIndex: 4, borderRadius: 8, borderWidth: 1, borderColor: '#B48A58', backgroundColor: 'rgba(12, 14, 19, 0.88)', padding: 14 },
+  overlayTitle: { color: '#E8C98A', fontSize: 21, fontWeight: '900', marginBottom: 10 },
+  clueGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  clueCard: { width: 138, minHeight: 118, borderRadius: 8, borderWidth: 1, borderColor: '#5F4936', backgroundColor: 'rgba(32, 33, 39, 0.92)', padding: 7, gap: 6 },
+  clueCardLocked: { opacity: 0.42 },
+  clueImage: { width: '100%', height: 66, borderRadius: 6 },
+  cluePlaceholder: { width: '100%', height: 66, borderRadius: 6, backgroundColor: '#1A2028' },
+  clueText: { color: '#F0DEC0', fontSize: 11, lineHeight: 14, fontWeight: '900' },
+  linkList: { gap: 8 },
+  linkCard: { borderRadius: 8, borderWidth: 1, borderColor: '#5F4936', backgroundColor: 'rgba(32, 33, 39, 0.92)', padding: 10, gap: 4 },
+  linkDone: { borderColor: '#D7B178', backgroundColor: 'rgba(80, 58, 36, 0.94)' },
+  linkLocked: { opacity: 0.5 },
+  linkTitle: { color: '#F3D99D', fontSize: 14, fontWeight: '900' },
+  linkText: { color: '#C7D3D7', fontSize: 12, lineHeight: 16, fontWeight: '700' },
+  rotateGate: { ...StyleSheet.absoluteFill, zIndex: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(8, 10, 14, 0.94)', padding: 24 },
+  rotateTitle: { color: '#F5D99F', fontSize: 28, fontWeight: '900', textAlign: 'center' },
+  rotateText: { color: '#DCE5E6', fontSize: 16, lineHeight: 23, fontWeight: '800', textAlign: 'center', marginTop: 8 },
 });
