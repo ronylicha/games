@@ -68,6 +68,17 @@ Un Klondike jouable en solo avec options de pioche et sauvegarde automatique.
 - Fondations, tableau, réserve et défausse.
 - Reprise automatique de la partie en cours.
 
+### Tarot
+
+Le Tarot français à 4 joueurs au complet : un humain contre trois IA, en *un contre tous*. Une donne enchaîne enchères, prise du chien, écart et plis, puis décompte au seuil de bouts. Voir la [documentation détaillée du Tarot](./docs/tarot.md).
+
+- Paquet complet de 78 cartes (56 couleurs, 21 atouts, l'Excuse).
+- Enchères de la Petite à la Garde Contre.
+- Écart contrôlé (pas de Roi, de bout ni d'Excuse).
+- Coups légaux : fourniture de la couleur, coupe à l'atout, Excuse libre.
+- Décompte demi-points avec petit au bout, poignée et chelem.
+- IA d'enchères, d'écart et de jeu de la carte.
+
 ### Dino Run
 
 Un runner inspiré des jeux d'arcade minimalistes, avec cactus, oiseaux, nuages, score, passage jour/nuit et leaderboard.
@@ -144,6 +155,16 @@ Dans les réglages GitHub du dépôt, **Pages > Build and deployment > Source** 
 
 Le build Pages utilise `EXPO_BASE_URL=/games` pour que les assets Expo soient servis correctement depuis le sous-chemin GitHub Pages du dépôt.
 
+## Release automatique au merge d'une PR
+
+Quand une pull request est fusionnée dans `main`, le workflow [release.yml](./.github/workflows/release.yml) lit la version de [package.json](./package.json) et, si le tag `v<version>` n'existe pas encore, le crée et le pousse automatiquement, puis publie une GitHub Release.
+
+- Les notes de version sont reprises de `docs/releases/<version>.md` si le fichier existe, sinon générées automatiquement à partir de l'historique.
+- Le workflow est **idempotent** : fusionner une PR qui ne change pas la version (tag déjà présent) est sans effet.
+- Il peut aussi être déclenché manuellement depuis l'onglet Actions (`workflow_dispatch`).
+
+Pour publier une nouvelle version : bumper `version` dans `package.json` (et idéalement ajouter `docs/releases/<version>.md`) dans la PR ; le tag et la release sont créés au merge.
+
 ## Build APK preview avec EAS
 
 Le profil `preview` dans [eas.json](./eas.json) génère un APK Android installable :
@@ -157,6 +178,16 @@ En mode non interactif :
 ```bash
 eas build --platform android --profile preview --non-interactive
 ```
+
+## Tests
+
+Les moteurs de jeu (fonctions pures) sont testés avec le **lanceur de tests natif de Node** (`node:test`, Node 24) — sans dépendance supplémentaire. Un petit resolveur ESM ([scripts/ts-test-loader.mjs](./scripts/ts-test-loader.mjs)) transpile le TypeScript via le paquet `typescript` déjà installé et résout l'alias `@/`.
+
+```bash
+npm test            # exécute tous les fichiers src/**/*.test.ts
+```
+
+Les fichiers de test sont co-localisés avec le code (ex. `src/game/tarot/play.test.ts` couvre le moteur de plis du Tarot).
 
 ## Structure principale
 
