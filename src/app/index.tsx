@@ -110,6 +110,19 @@ const games = [
     ],
   },
   {
+    href: '/tarot',
+    title: 'Tarot',
+    preview: 'tarot',
+    accent: '#564AA8',
+    background: '#EFE9FB',
+    rules: [
+      'Enchéris de la Petite à la Garde Contre, puis prends le chien pour devenir preneur.',
+      'Constitue ton écart sans y glisser de Roi, de bout ni l’Excuse.',
+      'Fournis la couleur demandée, coupe à l’atout sinon ; l’Excuse échappe à toute obligation.',
+      'Atteins ton seuil de points (36 à 56 selon tes bouts) pour remporter le contrat.',
+    ],
+  },
+  {
     href: '/street-brawl',
     title: 'Street Brawl',
     preview: 'street-brawl',
@@ -406,6 +419,18 @@ function GamePreview({ type, accent, index }: { type: Game['preview']; accent: s
         <View style={styles.vallombreCaseFile}>
           <Text style={styles.vallombreCaseText}>23:47</Text>
         </View>
+      </View>
+    );
+  }
+
+  if (type === 'tarot') {
+    return (
+      <View style={[styles.preview, { backgroundColor: '#2B2150' }]}>
+        <Image source={require('@/assets/game/tarot/bg-table.png')} style={styles.tarotBack} contentFit="cover" />
+        <View style={[styles.diagonalBand, { backgroundColor: accent, opacity: 0.5, transform: [{ rotate: '-16deg' }] }]} />
+        <Image source={require('@/assets/game/tarot/suit-hearts-14.png')} style={[styles.tarotCardPreview, styles.tarotCardLeft]} contentFit="contain" />
+        <Image source={require('@/assets/game/tarot/excuse.png')} style={[styles.tarotCardPreview, styles.tarotCardCenter]} contentFit="contain" />
+        <Image source={require('@/assets/game/tarot/trump-21.png')} style={[styles.tarotCardPreview, styles.tarotCardRight]} contentFit="contain" />
       </View>
     );
   }
@@ -1217,5 +1242,32 @@ const styles = StyleSheet.create({
     top: 56,
     width: 62,
     height: 42,
+  },
+  tarotBack: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+  },
+  tarotCardPreview: {
+    position: 'absolute',
+    width: 64,
+    height: 96,
+    left: '50%',
+  },
+  tarotCardLeft: {
+    bottom: 26,
+    marginLeft: -92,
+    transform: [{ rotate: '-16deg' }],
+  },
+  tarotCardCenter: {
+    bottom: 34,
+    marginLeft: -32,
+  },
+  tarotCardRight: {
+    bottom: 26,
+    marginLeft: 28,
+    transform: [{ rotate: '16deg' }],
   },
 });
