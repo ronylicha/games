@@ -4,6 +4,8 @@ import { Image } from 'expo-image';
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { useResponsive } from '@/hooks/use-responsive';
+
 type ChessMode = 'human' | 'computer';
 type ChessLevel = 'facile' | 'normal' | 'difficile';
 
@@ -42,6 +44,7 @@ export function ChessGame() {
   const [lastMove, setLastMove] = useState<Move | null>(null);
   const [lastMoveColor, setLastMoveColor] = useState<'w' | 'b' | null>(null);
   const [hydrated, setHydrated] = useState(false);
+  const { boardMaxSize } = useResponsive();
 
   const chess = useMemo(() => new Chess(fen), [fen]);
   const board = chess.board();
@@ -213,7 +216,7 @@ export function ChessGame() {
         <Text style={styles.statusText}>{statusText(chess, aiThinking, level, aiColor)}</Text>
       </View>
 
-      <View style={styles.board}>
+      <View style={[styles.board, { maxWidth: boardMaxSize }]}>
         {displayRows.map((rowIndex) =>
           displayCols.map((colIndex) => {
             const piece = board[rowIndex][colIndex];
@@ -496,7 +499,6 @@ const styles = StyleSheet.create({
   },
   board: {
     width: '100%',
-    maxWidth: 620,
     aspectRatio: 1,
     alignSelf: 'center',
     borderRadius: 8,

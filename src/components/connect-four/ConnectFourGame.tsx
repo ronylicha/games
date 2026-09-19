@@ -25,6 +25,7 @@ import {
   ConnectFourScore,
   ConnectFourState,
 } from '@/game/connect-four/types';
+import { useResponsive } from '@/hooks/use-responsive';
 
 const STORAGE_KEY = 'games:connect-four:v1';
 const aiDelayMs = 460;
@@ -36,7 +37,8 @@ const assets = {
 
 export function ConnectFourGame() {
   const { width } = useWindowDimensions();
-  const boardWidth = Math.min(width - 48, 620);
+  const { boardMaxSize } = useResponsive();
+  const boardWidth = Math.min(width - 48, boardMaxSize);
   const boardHeight = boardWidth * 0.82;
   const [hydrated, setHydrated] = useState(false);
   const [mode, setMode] = useState<ConnectFourMode>('ai');

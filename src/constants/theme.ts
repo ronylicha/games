@@ -61,5 +61,44 @@ export const Spacing = {
   six: 64,
 } as const;
 
+export type SpacingToken = keyof typeof Spacing;
+
+/**
+ * Échelle d'espacement pour les appareils de type tablette (grands écrans).
+ * Mêmes clés que `Spacing` : une mise en page peut basculer d'une échelle à
+ * l'autre (via `useResponsive`) sans changer les clés qu'elle référence.
+ * Le `satisfies` garantit à la compilation que les deux échelles restent
+ * synchronisées si une clé est ajoutée ou retirée de `Spacing`.
+ */
+export const SpacingTablet = {
+  half: 4,
+  one: 8,
+  two: 12,
+  three: 24,
+  four: 36,
+  five: 48,
+  six: 96,
+} as const satisfies Record<SpacingToken, number>;
+
+/**
+ * Échelle typographique partagée par l'application. Chaque rôle porte une
+ * taille « téléphone » de base et une surcharge `tablet` (taille + interligne)
+ * pour agrandir le texte sur grand écran sans modifier la graisse. Les rôles
+ * reflètent les `type` de `ThemedText`, qui peut les adopter à terme.
+ */
+export const Typography = {
+  small: { fontSize: 14, lineHeight: 20, fontWeight: 500, tablet: { fontSize: 16, lineHeight: 24 } },
+  default: { fontSize: 16, lineHeight: 24, fontWeight: 500, tablet: { fontSize: 18, lineHeight: 28 } },
+  subtitle: { fontSize: 32, lineHeight: 44, fontWeight: 600, tablet: { fontSize: 40, lineHeight: 54 } },
+  title: { fontSize: 48, lineHeight: 52, fontWeight: 600, tablet: { fontSize: 60, lineHeight: 66 } },
+  link: { fontSize: 14, lineHeight: 30, fontWeight: 400, tablet: { fontSize: 16, lineHeight: 32 } },
+  code: { fontSize: 12, lineHeight: 18, fontWeight: 500, tablet: { fontSize: 14, lineHeight: 20 } },
+} as const;
+
+export type TypographyRole = keyof typeof Typography;
+
 export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
 export const MaxContentWidth = 800;
+
+/** Largeur maximale du contenu sur tablette (mise en page plus large que le téléphone). */
+export const MaxContentWidthTablet = 1100;

@@ -2,8 +2,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image } from 'expo-image';
 import * as Haptics from 'expo-haptics';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { useResponsive } from '@/hooks/use-responsive';
 import {
   chooseUnbeatableMove,
   createTicTacToeScore,
@@ -17,6 +18,8 @@ import { TicTacToeMark, TicTacToeMode, TicTacToeSavedState, TicTacToeScore, TicT
 
 const STORAGE_KEY = 'games:tic-tac-toe:v1';
 const aiDelayMs = 380;
+/** Chrome horizontal de la cabine arcade : padding (12) + bordure (3) de chaque côté. */
+const RootChrome = (12 + 3) * 2;
 
 const assets = {
   background: require('@/assets/game/tic-tac-toe/bg-arcade.png'),
@@ -35,8 +38,7 @@ const assets = {
 };
 
 export function TicTacToeGame() {
-  const { width } = useWindowDimensions();
-  const boardSize = Math.min(width - 48, 390);
+  const { boardMaxSize } = useResponsive();
   const [hydrated, setHydrated] = useState(false);
   const [mode, setMode] = useState<TicTacToeMode>('ai');
   const [playerMark, setPlayerMark] = useState<TicTacToeMark>('X');
@@ -206,7 +208,7 @@ export function TicTacToeGame() {
   const endTone = getEndTone(game.winner, mode, playerMark);
 
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, { maxWidth: boardMaxSize + RootChrome }]}>
       <Image source={assets.background} style={styles.backdrop} contentFit="cover" />
       <View style={styles.scanlines} />
 
@@ -275,7 +277,7 @@ export function TicTacToeGame() {
         </View>
       ) : null}
 
-      <View style={[styles.boardShell, { width: boardSize, height: boardSize }]}>
+      <View style={styles.boardShell}>
         <Image source={assets.board} style={styles.boardImage} contentFit="contain" />
         <View style={styles.boardGrid}>
           {game.board.map((cell, index) => {
@@ -436,6 +438,8 @@ function impact(style: 'light' | 'heavy') {
 
 const styles = StyleSheet.create({
   root: {
+    width: '100%',
+    alignSelf: 'center',
     borderRadius: 8,
     borderWidth: 3,
     borderColor: '#101820',
@@ -665,6 +669,8 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   boardShell: {
+    width: '100%',
+    aspectRatio: 1,
     alignSelf: 'center',
     position: 'relative',
     padding: '7%',

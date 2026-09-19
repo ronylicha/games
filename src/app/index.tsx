@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { Image } from 'expo-image';
 import { Link, router } from 'expo-router';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { useResponsive } from '@/hooks/use-responsive';
+import { useSafeNavInsets } from '@/hooks/use-safe-nav-insets';
 
 const games = [
   {
@@ -153,20 +155,23 @@ const games = [
 type Game = (typeof games)[number];
 
 export default function HomeScreen() {
-  const insets = useSafeAreaInsets();
+  const nav = useSafeNavInsets();
+  const { width, homeColumns, isLargeScreen, select } = useResponsive();
   const [rulesGame, setRulesGame] = useState<Game | null>(null);
+
+  const gap = isLargeScreen ? 16 : 12;
+  const bodyMaxWidth = select({ phone: 640, tablet: 980, desktop: 1200 });
+  const gridWidth = Math.min(width - nav.left - nav.right, bodyMaxWidth);
+  const cardWidth = Math.floor((gridWidth - gap * (homeColumns - 1)) / homeColumns);
 
   return (
     <View style={styles.screen}>
       <ScrollView
         contentContainerStyle={[
           styles.content,
-          {
-            paddingTop: Math.max(insets.top, 18) + 12,
-            paddingBottom: Math.max(insets.bottom, 20) + 24,
-          },
+          { paddingTop: nav.top, paddingBottom: nav.bottom, paddingLeft: nav.left, paddingRight: nav.right },
         ]}>
-        <SafeAreaView edges={['left', 'right']} style={styles.safeArea}>
+        <View style={[styles.body, { maxWidth: bodyMaxWidth, gap: isLargeScreen ? 22 : 18 }]}>
           <View style={styles.hero}>
             <View style={styles.logoStage}>
               <Image source={require('@/assets/images/app-logo.png')} style={styles.logo} contentFit="contain" />
@@ -182,9 +187,9 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          <View style={styles.grid}>
+          <View style={[styles.grid, { gap }]}>
             {games.map((game, index) => (
-              <View key={game.href} style={[styles.gameShell, { backgroundColor: game.background }]}>
+              <View key={game.href} style={[styles.gameShell, { width: cardWidth, backgroundColor: game.background }]}>
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={`Règles ${game.title}`}
@@ -241,7 +246,7 @@ export default function HomeScreen() {
               </View>
             ))}
           </View>
-        </SafeAreaView>
+        </View>
       </ScrollView>
 
       <RulesModal game={rulesGame} onClose={() => setRulesGame(null)} />
@@ -532,12 +537,9 @@ const styles = StyleSheet.create({
   content: {
     flexGrow: 1,
     alignItems: 'center',
-    paddingHorizontal: 14,
   },
-  safeArea: {
+  body: {
     width: '100%',
-    maxWidth: 940,
-    gap: 18,
   },
   hero: {
     minHeight: 122,
@@ -615,11 +617,8 @@ const styles = StyleSheet.create({
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
   },
   gameShell: {
-    width: '100%',
-    maxWidth: 450,
     minHeight: 232,
     borderRadius: 8,
     borderWidth: 3,

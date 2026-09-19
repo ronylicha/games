@@ -110,6 +110,14 @@ Un runner inspiré des jeux d'arcade minimalistes, avec cactus, oiseaux, nuages,
 - GitHub Pages pour la version web
 - EAS Build pour les APK preview
 
+## Design responsive
+
+L'interface s'adapte du téléphone à la tablette et au web large via un système
+partagé (breakpoints, caps de largeur, marges nav garanties et coques d'écran).
+Voir [docs/responsive-design.md](./docs/responsive-design.md) pour les hooks
+`useResponsive` / `useSafeNavInsets`, les coques `GameScreenScaffold` /
+`GameStage` et les patterns d'adaptation par type de jeu.
+
 ## Configuration app
 
 - Nom affiché : `Games`

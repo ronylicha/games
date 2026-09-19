@@ -1,7 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { useResponsive } from '@/hooks/use-responsive';
 import {
   DrawMode,
   SolitaireCard,
@@ -24,19 +25,20 @@ const foundationSuits: SolitaireSuit[] = ['clubs', 'diamonds', 'hearts', 'spades
 const solitaireStorageKey = 'games:solitaire:state';
 
 export function SolitaireGame() {
-  const { width } = useWindowDimensions();
+  const { width, tableMaxWidth, select } = useResponsive();
   const [state, setState] = useState(() => createSolitaireState('infinite'));
   const [selected, setSelected] = useState<SolitaireSource | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const lastCardPress = useRef<{ key: string; time: number } | null>(null);
 
-  const contentWidth = Math.max(280, Math.min(width - 48, 760));
-  const tableauGap = width < 420 ? 3 : 5;
-  const topGap = width < 420 ? 5 : 8;
+  const contentWidth = Math.max(280, Math.min(width - 48, tableMaxWidth));
+  const tableauGap = select({ phone: width < 420 ? 3 : 5, tablet: 8, desktop: 10 });
+  const topGap = select({ phone: width < 420 ? 5 : 8, tablet: 12, desktop: 14 });
   const tableauChromeWidth = 28;
   const topCardLimit = (contentWidth - topGap * 5) / 6;
   const tableauCardLimit = (contentWidth - tableauChromeWidth - tableauGap * 6) / 7;
-  const cardWidth = Math.max(32, Math.min(68, topCardLimit, tableauCardLimit));
+  const maxCardWidth = select({ phone: 68, tablet: 92, desktop: 104 });
+  const cardWidth = Math.max(32, Math.min(maxCardWidth, topCardLimit, tableauCardLimit));
   const cardHeight = cardWidth * 1.38;
   const tableauWidth = cardWidth * 7 + tableauGap * 6 + tableauChromeWidth;
   const tableauHeight = Math.max(430, cardHeight + cardHeight * 0.27 * 6 + 36);

@@ -5,7 +5,6 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, type ImageSourcePropType } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
   vallombreCharacters,
@@ -15,6 +14,7 @@ import {
   type VallombreClueId,
   type VallombreLinkId,
 } from '@/game/vallombre';
+import { useSafeNavInsets } from '@/hooks/use-safe-nav-insets';
 
 const STORAGE_KEY = 'games:vallombre:renpy-state:v1';
 
@@ -543,13 +543,18 @@ export function VallombreGame({ startMode }: VallombreGameProps) {
   }, [addClue, continueQueue, hydrated, queueLines, startNewGame, state, update]);
 
   const isPortrait = height > width;
+  const nav = useSafeNavInsets();
 
   return (
     <View style={styles.screen}>
       <StatusBar hidden />
       <Image source={backgrounds[currentLine.bg ?? state.bg]} style={styles.appBackdrop} contentFit="cover" />
       <View style={styles.appShade} />
-      <SafeAreaView style={styles.safe}>
+      <View
+        style={[
+          styles.safe,
+          { paddingTop: nav.top, paddingBottom: nav.bottom, paddingLeft: nav.left, paddingRight: nav.right },
+        ]}>
         {isPortrait ? <RotateGate /> : null}
         <View style={styles.stageShell}>
           <View style={styles.leftStage}>
@@ -563,7 +568,7 @@ export function VallombreGame({ startMode }: VallombreGameProps) {
           </View>
           <ChoicePanel title={choiceTitle(state)} choices={choices} />
         </View>
-      </SafeAreaView>
+      </View>
     </View>
   );
 }
@@ -979,7 +984,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#090A0E' },
   appBackdrop: { ...StyleSheet.absoluteFill },
   appShade: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(6, 8, 12, 0.78)' },
-  safe: { flex: 1, padding: 10 },
+  safe: { flex: 1 },
   stageShell: { flex: 1, flexDirection: 'row', gap: 10 },
   leftStage: { flex: 1, borderRadius: 8, overflow: 'hidden', borderWidth: 1, borderColor: '#B48A58', backgroundColor: '#111319' },
   sceneImage: { ...StyleSheet.absoluteFill },

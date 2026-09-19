@@ -11,9 +11,11 @@ import {
   passDominoTurn,
   playDominoAiTurn,
 } from '@/game/dominoes';
+import { useResponsive } from '@/hooks/use-responsive';
 
 export function DominoesGame() {
   const { width } = useWindowDimensions();
+  const { tableMaxWidth, select } = useResponsive();
   const [state, setState] = useState(() => createDominoState());
   const [selectedTileId, setSelectedTileId] = useState<string | null>(null);
 
@@ -24,7 +26,7 @@ export function DominoesGame() {
   );
   const aiThinking = state.turn === 'red' && state.status === 'playing';
   const visibleHand = state.hands.ivory;
-  const chainColumns = width < 430 ? 5 : 6;
+  const chainColumns = select({ phone: width < 430 ? 5 : 6, tablet: 9, desktop: 11 });
   const chainRows = useMemo(() => chunkDominoChain(state.chain, chainColumns), [chainColumns, state.chain]);
 
   useEffect(() => {
@@ -77,7 +79,7 @@ export function DominoesGame() {
   const aiLastTileId = state.lastMovePlayer === 'red' ? state.lastMove?.tileId : null;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { maxWidth: tableMaxWidth }]}>
       <View style={styles.toolbar}>
         <View style={styles.modeBadge}>
           <Text style={styles.modeBadgeText}>1 vs IA</Text>
@@ -307,6 +309,8 @@ function statusText(status: string, turn: string, thinking: boolean): string {
 
 const styles = StyleSheet.create({
   container: {
+    width: '100%',
+    alignSelf: 'center',
     gap: 14,
   },
   toolbar: {

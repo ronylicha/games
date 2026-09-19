@@ -2,6 +2,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useMemo, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
+import { useResponsive } from '@/hooks/use-responsive';
+import { useSafeNavInsets } from '@/hooks/use-safe-nav-insets';
+
 import {
   BackgammonMode,
   BackgammonMove,
@@ -32,6 +35,10 @@ const centerBarWidth = 0;
 
 export function BackgammonGame() {
   const { width, height } = useWindowDimensions();
+  const { isLargeScreen, isLandscape, tableMaxWidth } = useResponsive();
+  // Marges nav identiques au scaffold (variant="fill", navMargins {left:8,right:8})
+  // pour calculer la vraie boîte de contenu et garder le plateau hors safe-area.
+  const nav = useSafeNavInsets({ left: 8, right: 8 });
   const [state, setState] = useState(() => createBackgammonState());
   const [mode, setMode] = useState<BackgammonMode>('computer');
   const [selected, setSelected] = useState<MoveFrom | null>(null);
@@ -44,17 +51,21 @@ export function BackgammonGame() {
   );
   const aiThinking = mode === 'computer' && state.turn === 'red' && state.status === 'playing';
   const aiLastMove = mode === 'computer' && state.lastMovePlayer === 'red' ? state.lastMove : null;
-  const isDesktopWeb = Platform.OS === 'web' && width >= 900;
-  const availableWidth = Math.max(320, width - 20);
-  const availableHeight = Math.max(360, height - (isDesktopWeb ? 170 : 230));
+  // Plateau horizontal (non pivoté) sur web large ET sur grand écran en paysage
+  // (tablette/desktop natif) ; sinon plateau pivoté pour remplir l'écran portrait.
+  const horizontalBoard = (Platform.OS === 'web' && width >= 900) || (isLargeScreen && isLandscape);
+  const availableWidth = Math.max(320, width - nav.left - nav.right);
+  const bodyHeight = Math.max(360, height - nav.top - nav.bottom);
+  // Réserve verticale pour le bouton Retour flottant + les contrôles + l'écart.
+  const availableHeight = Math.max(300, bodyHeight - (horizontalBoard ? 180 : 210));
   const rotatedFrameWidth = Math.min(availableWidth, availableHeight / 1.78);
   const rotatedFrameHeight = rotatedFrameWidth * 1.78;
-  const desktopBoardWidth = Math.min(availableWidth, availableHeight * 1.78, 1120);
-  const desktopBoardHeight = desktopBoardWidth / 1.78;
-  const boardWidth = isDesktopWeb ? desktopBoardWidth : rotatedFrameHeight;
-  const boardHeight = isDesktopWeb ? desktopBoardHeight : rotatedFrameWidth;
-  const boardFrameWidth = isDesktopWeb ? boardWidth : rotatedFrameWidth;
-  const boardFrameHeight = isDesktopWeb ? boardHeight : rotatedFrameHeight;
+  const horizontalBoardWidth = Math.min(availableWidth, availableHeight * 1.78, tableMaxWidth);
+  const horizontalBoardHeight = horizontalBoardWidth / 1.78;
+  const boardWidth = horizontalBoard ? horizontalBoardWidth : rotatedFrameHeight;
+  const boardHeight = horizontalBoard ? horizontalBoardHeight : rotatedFrameWidth;
+  const boardFrameWidth = horizontalBoard ? boardWidth : rotatedFrameWidth;
+  const boardFrameHeight = horizontalBoard ? boardHeight : rotatedFrameHeight;
   const pointMetrics = useMemo(() => {
     const usableWidth = boardWidth - 64 - 16;
     const pointWidth = usableWidth / 12;
@@ -189,7 +200,7 @@ export function BackgammonGame() {
 
   return (
     <View style={styles.container}>
-      <View style={[styles.controls, { width: Math.min(availableWidth, isDesktopWeb ? boardWidth : 720) }]}>
+      <View style={[styles.controls, { width: Math.min(availableWidth, horizontalBoard ? boardWidth : 720) }]}>
         <View style={styles.statusRow}>
           <Text style={styles.statusText}>{statusText(state.turn, state.status, aiThinking)}</Text>
           <View style={styles.diceRow}>
@@ -225,7 +236,7 @@ export function BackgammonGame() {
             {
               width: boardWidth,
               height: boardHeight,
-              transform: isDesktopWeb ? undefined : [{ rotate: '90deg' }],
+              transform: horizontalBoard ? undefined : [{ rotate: '90deg' }],
             },
           ]}>
           <View style={styles.bearOffRail}>

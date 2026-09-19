@@ -1,6 +1,8 @@
 import { ReactNode } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { useResponsive } from '@/hooks/use-responsive';
+import { useSafeNavInsets } from '@/hooks/use-safe-nav-insets';
 
 import { BackButton } from './BackButton';
 
@@ -11,29 +13,27 @@ type GameStageProps = {
 };
 
 export function GameStage({ title, subtitle, children }: GameStageProps) {
-  const insets = useSafeAreaInsets();
+  const nav = useSafeNavInsets();
+  const { contentMaxWidth, isLargeScreen } = useResponsive();
 
   return (
     <View style={styles.screen}>
       <ScrollView
         contentContainerStyle={[
           styles.content,
-          {
-            paddingTop: Math.max(insets.top, 18) + 12,
-            paddingBottom: Math.max(insets.bottom, 20) + 24,
-          },
+          { paddingTop: nav.top, paddingBottom: nav.bottom, paddingLeft: nav.left, paddingRight: nav.right },
         ]}>
-        <SafeAreaView edges={['left', 'right']} style={styles.safeArea}>
+        <View style={[styles.body, { maxWidth: contentMaxWidth }, isLargeScreen && styles.bodyLarge]}>
           <BackButton />
           <View style={styles.header}>
-            <Text style={styles.eyebrow}>Jeux duel</Text>
-            <Text numberOfLines={2} style={styles.title}>
+            <Text style={[styles.eyebrow, isLargeScreen && styles.eyebrowLarge]}>Jeux duel</Text>
+            <Text numberOfLines={2} style={[styles.title, isLargeScreen && styles.titleLarge]}>
               {title}
             </Text>
-            <Text style={styles.subtitle}>{subtitle}</Text>
+            <Text style={[styles.subtitle, isLargeScreen && styles.subtitleLarge]}>{subtitle}</Text>
           </View>
           {children}
-        </SafeAreaView>
+        </View>
       </ScrollView>
     </View>
   );
@@ -47,12 +47,13 @@ const styles = StyleSheet.create({
   content: {
     flexGrow: 1,
     alignItems: 'center',
-    paddingHorizontal: 16,
   },
-  safeArea: {
+  body: {
     width: '100%',
-    maxWidth: 760,
     gap: 18,
+  },
+  bodyLarge: {
+    gap: 26,
   },
   header: {
     gap: 4,
@@ -63,15 +64,26 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     textTransform: 'uppercase',
   },
+  eyebrowLarge: {
+    fontSize: 15,
+  },
   title: {
     color: '#191A1F',
     fontSize: 30,
     fontWeight: '900',
     lineHeight: 34,
   },
+  titleLarge: {
+    fontSize: 40,
+    lineHeight: 46,
+  },
   subtitle: {
     color: '#53635D',
     fontSize: 15,
     lineHeight: 21,
+  },
+  subtitleLarge: {
+    fontSize: 18,
+    lineHeight: 25,
   },
 });

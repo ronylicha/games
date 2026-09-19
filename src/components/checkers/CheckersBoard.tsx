@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { LayoutChangeEvent, Pressable, StyleSheet, View } from 'react-native';
 
 import { BOARD_SIZE, Board, Move, Square, squareKey, squaresEqual } from '@/game/checkers';
+import { useResponsive } from '@/hooks/use-responsive';
 
 type CheckersBoardProps = {
   board: Board;
@@ -38,6 +39,7 @@ export function CheckersBoard({
   disabled,
   onSquarePress,
 }: CheckersBoardProps) {
+  const { boardMaxSize } = useResponsive();
   const [boardSize, setBoardSize] = useState(0);
   const tileSize = boardSize / BOARD_SIZE;
 
@@ -75,7 +77,7 @@ export function CheckersBoard({
   }
 
   return (
-    <View style={styles.boardWrap} onLayout={handleLayout}>
+    <View style={[styles.boardWrap, { maxWidth: boardMaxSize }]} onLayout={handleLayout}>
       {boardSize > 0 && (
         <Pressable style={StyleSheet.absoluteFill} onPress={handlePress}>
           <Canvas style={StyleSheet.absoluteFill}>
@@ -219,7 +221,6 @@ export function CheckersBoard({
 const styles = StyleSheet.create({
   boardWrap: {
     width: '100%',
-    maxWidth: 560,
     aspectRatio: 1,
     alignSelf: 'center',
     borderRadius: 8,

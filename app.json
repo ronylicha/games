@@ -10,7 +10,8 @@
     "scheme": "games",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/images/icon.png"
+      "icon": "./assets/images/icon.png",
+      "supportsTablet": true
     },
     "android": {
       "package": "com.ronylicha.games",

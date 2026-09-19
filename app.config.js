@@ -5,7 +5,12 @@ const baseUrl = process.env.EXPO_BASE_URL;
 module.exports = {
   expo: {
     ...expo,
-    plugins: [...(expo.plugins ?? []), 'expo-audio', 'expo-asset'],
+    plugins: [
+      ...(expo.plugins ?? []),
+      'expo-audio',
+      'expo-asset',
+      './plugins/with-adi-registration',
+    ],
     experiments: {
       ...expo.experiments,
       ...(baseUrl ? { baseUrl } : {}),

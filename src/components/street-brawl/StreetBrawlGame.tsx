@@ -4,8 +4,8 @@ import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useSafeNavInsets } from '@/hooks/use-safe-nav-insets';
 import {
   createStreetBrawlModel,
   emptyStreetBrawlInput,
@@ -156,7 +156,9 @@ const powerSprites: Record<PowerUpKind, ImageSource> = {
 
 export function StreetBrawlGame() {
   const { width, height } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
+  // Marges nav garanties en paysage : plancher 48dp à gauche/droite/bas pour que
+  // les contrôles tactiles et le bouton Retour ne touchent jamais les bords.
+  const nav = useSafeNavInsets({ left: 48, right: 48, bottom: 48 });
   const [progress, setProgress] = useState<StreetBrawlProgress>(initialStreetBrawlProgress);
   const [selectedLevel, setSelectedLevel] = useState(1);
   const [snapshot, setSnapshot] = useState<StreetBrawlSnapshot>(() => toStreetBrawlSnapshot(createStreetBrawlModel(getStreetBrawlLevel(1))));
@@ -168,8 +170,8 @@ export function StreetBrawlGame() {
 
   const isWeb = Platform.OS === 'web';
   const isPortraitMobile = !isWeb && height > width;
-  const availableWidth = Math.max(320, width - insets.left - insets.right);
-  const availableHeight = Math.max(240, height - insets.top - insets.bottom);
+  const availableWidth = Math.max(320, width - nav.left - nav.right);
+  const availableHeight = Math.max(240, height - nav.top - nav.bottom);
   const scale = Math.min(availableWidth / stageWidth, availableHeight / stageHeight);
   const stagePixelWidth = stageWidth * scale;
   const stagePixelHeight = stageHeight * scale;
@@ -313,7 +315,11 @@ export function StreetBrawlGame() {
 
   return (
     <View style={styles.screen}>
-      <SafeAreaView edges={['left', 'right', 'top', 'bottom']} style={styles.safeArea}>
+      <View
+        style={[
+          styles.safeArea,
+          { paddingTop: nav.top, paddingBottom: nav.bottom, paddingLeft: nav.left, paddingRight: nav.right },
+        ]}>
         <View style={styles.topBar}>
           <Pressable style={styles.backButton} onPress={() => router.replace('/')}>
             <Text style={styles.backText}>Retour</Text>
@@ -369,7 +375,7 @@ export function StreetBrawlGame() {
             ) : null}
           </View>
         </View>
-      </SafeAreaView>
+      </View>
     </View>
   );
 }

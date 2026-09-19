@@ -3,6 +3,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image } from 'expo-image';
 import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 
+import { useResponsive } from '@/hooks/use-responsive';
+
 type GameStatus = 'ready' | 'running' | 'gameover';
 type ObstacleType = 'cactus' | 'bird';
 
@@ -79,8 +81,9 @@ const dayNightInterval = 250;
 
 export function DinoGame() {
   const { width } = useWindowDimensions();
-  const boardWidth = Math.max(300, Math.min(width - 32, 760));
-  const boardHeight = Math.max(230, Math.min(310, boardWidth * 0.58));
+  const { isLargeScreen, select } = useResponsive();
+  const boardWidth = Math.max(300, Math.min(width - 32, select({ phone: 760, tablet: 900, desktop: 1100 })));
+  const boardHeight = Math.max(230, Math.min(isLargeScreen ? 380 : 310, boardWidth * 0.58));
   const isDesktopWeb = Platform.OS === 'web' && width >= 900;
   const groundY = boardHeight - 46;
   const [leaderboard, setLeaderboard] = useState<LeaderScore[]>(sessionLeaderboard);
