@@ -1,10 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Image } from 'expo-image';
+import { Image, type ImageProps } from 'expo-image';
 import { router } from 'expo-router';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, type ImageSourcePropType } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import {
   vallombreCharacters,
@@ -15,6 +15,9 @@ import {
   type VallombreLinkId,
 } from '@/game/vallombre';
 import { useSafeNavInsets } from '@/hooks/use-safe-nav-insets';
+
+// expo-image (SDK 58) types `source` with its own ImageSource, no longer the React Native one.
+type AssetSource = ImageProps['source'];
 
 const STORAGE_KEY = 'games:vallombre:renpy-state:v1';
 
@@ -109,7 +112,7 @@ type Choice = {
   onPress: () => void;
 };
 
-const backgrounds: Record<BgKey, ImageSourcePropType> = {
+const backgrounds: Record<BgKey, AssetSource> = {
   'bg-01': require('@/assets/game/vallombre/bg-01.png'),
   'bg-02': require('@/assets/game/vallombre/bg-02.png'),
   'bg-03': require('@/assets/game/vallombre/bg-03.png'),
@@ -130,7 +133,7 @@ const backgrounds: Record<BgKey, ImageSourcePropType> = {
   'bg-hall': require('@/assets/game/vallombre/bg-hall.png'),
 };
 
-const characterAssets: Record<VallombreCharacterId, Record<Expression, ImageSourcePropType>> = {
+const characterAssets: Record<VallombreCharacterId, Record<Expression, AssetSource>> = {
   helene: {
     neutre: require('@/assets/game/vallombre/char-helene-neutre.png'),
     inquiet: require('@/assets/game/vallombre/char-helene-inquiet.png'),
@@ -175,7 +178,7 @@ const characterAssets: Record<VallombreCharacterId, Record<Expression, ImageSour
   },
 };
 
-const propAssets: Record<VallombreClueId, ImageSourcePropType> = {
+const propAssets: Record<VallombreClueId, AssetSource> = {
   'clu-01': require('@/assets/game/vallombre/prop-01.png'),
   'clu-02': require('@/assets/game/vallombre/prop-02.png'),
   'clu-03': require('@/assets/game/vallombre/prop-03.png'),
